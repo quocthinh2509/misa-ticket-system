@@ -16,6 +16,7 @@ import {
   X,
   Maximize2,
 } from 'lucide-react';
+import { FormattedText } from '@/components/FormattedText';
 
 interface Props {
   ticketId: string;
@@ -254,7 +255,7 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
               return (
                 <div key={msg.id} className="flex justify-center my-2">
                   <div className="text-xs bg-slate-100 text-slate-600 px-3 py-1 rounded-full border border-slate-200/80 font-medium shadow-2xs">
-                    {msg.message}
+                    <FormattedText text={msg.message} variant="chat-other" />
                   </div>
                 </div>
               );
@@ -302,10 +303,13 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
                       : 'bg-slate-100 text-slate-800 rounded-tl-none border border-slate-200/80'
                   }`}
                 >
-                  {/* Text content */}
+                  {/* Text content with formatted URLs */}
                   {msg.message && (
                     <p className="whitespace-pre-wrap break-words leading-relaxed">
-                      {msg.message}
+                      <FormattedText
+                        text={msg.message}
+                        variant={isMe ? 'chat-me' : 'chat-other'}
+                      />
                     </p>
                   )}
 

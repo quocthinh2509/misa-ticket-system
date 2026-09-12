@@ -8,6 +8,7 @@ import { Ticket, UserProfile, Attachment, TicketStatus, TicketPriority, Tag } fr
 import { TicketStatusBadge } from '@/components/TicketStatusBadge';
 import { TicketPriorityBadge } from '@/components/TicketPriorityBadge';
 import { TagBadge } from '@/components/TagBadge';
+import { FormattedText } from '@/components/FormattedText';
 import { ChatBox } from '@/components/ChatBox';
 import { formatDate } from '@/lib/utils';
 import {
@@ -376,7 +377,9 @@ export default function TicketDetailPage() {
                 Mô tả chi tiết
               </h3>
               <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed bg-slate-50/50 p-3.5 rounded-xl border border-slate-100">
-                {ticket.description || (
+                {ticket.description ? (
+                  <FormattedText text={ticket.description} showIcon={true} />
+                ) : (
                   <span className="italic text-slate-400">Không có mô tả</span>
                 )}
               </div>
