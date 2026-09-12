@@ -35,6 +35,7 @@ export default function RegisterPage() {
             department: department.trim(),
             role: role,
           },
+          emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/login` : undefined,
         },
       });
 
@@ -43,16 +44,14 @@ export default function RegisterPage() {
       }
 
       if (data.session) {
-        // Logged in immediately
+        // Logged in immediately (khi tắt confirm email)
         router.push('/tickets');
         router.refresh();
       } else {
+        // Khi bật xác thực email
         setSuccessMsg(
-          'Đăng ký tài khoản thành công! Bạn có thể đăng nhập ngay.'
+          'Đăng ký tài khoản thành công! Vui lòng kiểm tra hộp thư email của bạn (kể cả mục Thư rác/Spam) và nhấn vào liên kết xác nhận để kích hoạt tài khoản.'
         );
-        setTimeout(() => {
-          router.push('/login');
-        }, 1500);
       }
     } catch (err: any) {
       console.error('Register error:', err);
