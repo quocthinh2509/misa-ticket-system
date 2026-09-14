@@ -44,12 +44,12 @@ export interface Tag {
 export interface ChatLog {
   id: string;
   ticket_id: string;
-  sender_id: string;
+  sender_id: string | null;
   message: string;
   message_type: MessageType;
   created_at: string;
   // Joined fields
-  sender?: UserProfile;
+  sender?: UserProfile | null;
   attachment?: Attachment | null;
   attachments?: Attachment[] | null;
 }
@@ -61,7 +61,7 @@ export interface Attachment {
   drive_file_id: string;
   file_name: string;
   file_type?: string | null;
-  uploaded_by: string;
+  uploaded_by: string | null;
   created_at: string;
   // Computed / metadata
   view_url?: string;

@@ -1,5 +1,3 @@
-'use client';
-
 import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { ChatLog, UserProfile, Attachment } from '@/lib/types';
@@ -13,6 +11,7 @@ import {
   ExternalLink,
   ShieldCheck,
   Headphones,
+  User,
   X,
   Maximize2,
 } from 'lucide-react';
@@ -29,6 +28,17 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
   const [inputMessage, setInputMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [mySentMsgIds, setMySentMsgIds] = useState<string[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = sessionStorage.getItem(`sent_msgs_${ticketId}`);
+        return saved ? JSON.parse(saved) : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  });
   
   // Pending file to send (either from file picker or clipboard paste Ctrl+V)
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -41,6 +51,16 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
+
+  const markMessageAsMine = (msgId: string) => {
+    setMySentMsgIds((prev) => {
+      const updated = [...prev, msgId];
+      try {
+        sessionStorage.setItem(`sent_msgs_${ticketId}`, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -84,12 +104,15 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
         async (payload) => {
           const newMsg = payload.new as ChatLog;
 
-          // Lấy thông tin sender và attachments nếu có
-          const { data: sender } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', newMsg.sender_id)
-            .single();
+          let sender = null;
+          if (newMsg.sender_id) {
+            const { data: senderData } = await supabase
+              .from('users')
+              .select('*')
+              .eq('id', newMsg.sender_id)
+              .single();
+            sender = senderData;
+          }
 
           const { data: attachments } = await supabase
             .from('attachments')
@@ -181,6 +204,11 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
           throw new Error(errJson.error || 'Upload ảnh/tệp thất bại');
         }
 
+        const data = await res.json();
+        if (data.chatLog?.id) {
+          markMessageAsMine(data.chatLog.id);
+        }
+
         clearPendingFile();
         setInputMessage('');
       } else {
@@ -193,6 +221,11 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
 
         if (!res.ok) {
           throw new Error('Không thể gửi tin nhắn');
+        }
+
+        const data = await res.json();
+        if (data.message?.id) {
+          markMessageAsMine(data.message.id);
         }
 
         setInputMessage('');
@@ -261,7 +294,9 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
               );
             }
 
-            const isMe = currentUser ? msg.sender_id === currentUser.id : false;
+            const isMe = currentUser
+              ? msg.sender_id === currentUser.id
+              : msg.sender_id === null && mySentMsgIds.includes(msg.id);
             const role = msg.sender?.role;
             const attachedList: Attachment[] =
               msg.attachments && msg.attachments.length > 0
@@ -278,7 +313,7 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
                 {/* Sender info */}
                 <div className="flex items-center gap-1.5 mb-1 px-1 text-xs text-slate-500">
                   <span className="font-semibold text-slate-700">
-                    {isMe ? 'Bạn' : msg.sender?.full_name || 'Người dùng'}
+                    {isMe ? (currentUser ? 'Bạn' : 'Bạn (Khách)') : msg.sender?.full_name || 'Khách'}
                   </span>
                   {role === 'admin' && (
                     <span className="text-[10px] text-purple-600 bg-purple-50 border border-purple-200 px-1.5 py-0.2 rounded font-medium flex items-center gap-0.5">
@@ -288,6 +323,11 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
                   {role === 'agent' && (
                     <span className="text-[10px] text-indigo-600 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded font-medium flex items-center gap-0.5">
                       <Headphones className="w-2.5 h-2.5" /> Agent
+                    </span>
+                  )}
+                  {!role && !msg.sender && (
+                    <span className="text-[10px] text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.2 rounded font-medium flex items-center gap-0.5">
+                      <User className="w-2.5 h-2.5" /> Khách
                     </span>
                   )}
                   <span className="text-[11px] text-slate-400">
@@ -432,91 +472,85 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
         </div>
       )}
 
-      {/* Input area - chỉ hiện khi đã đăng nhập */}
-      {currentUser ? (
-        <div className="p-3 border-t border-slate-100 bg-white">
-          <form onSubmit={handleSendMessage} className="flex items-center gap-2">
-            {/* File Picker (Any file) */}
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={(e) => e.target.files?.[0] && handleSelectFile(e.target.files[0])}
-              className="hidden"
-              id="chat-file-upload"
-            />
-            <button
-              type="button"
-              disabled={sending}
-              onClick={() => fileInputRef.current?.click()}
-              title="Đính kèm tài liệu (PDF, Word, Excel, ZIP...)"
-              className="p-2.5 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 transition-colors disabled:opacity-50 cursor-pointer"
-            >
-              <Paperclip className="w-4 h-4" />
-            </button>
+      {/* Input area - hỗ trợ cả khách và user đăng nhập */}
+      <div className="p-3 border-t border-slate-100 bg-white">
+        <form onSubmit={handleSendMessage} className="flex items-center gap-2">
+          {/* File Picker (Any file) */}
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={(e) => e.target.files?.[0] && handleSelectFile(e.target.files[0])}
+            className="hidden"
+            id="chat-file-upload"
+          />
+          <button
+            type="button"
+            disabled={sending}
+            onClick={() => fileInputRef.current?.click()}
+            title="Đính kèm tài liệu (PDF, Word, Excel, ZIP...)"
+            className="p-2.5 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 transition-colors disabled:opacity-50 cursor-pointer"
+          >
+            <Paperclip className="w-4 h-4" />
+          </button>
 
-            {/* Image Picker (Images only) */}
-            <input
-              type="file"
-              ref={imageInputRef}
-              accept="image/*"
-              onChange={(e) => e.target.files?.[0] && handleSelectFile(e.target.files[0])}
-              className="hidden"
-              id="chat-image-upload"
-            />
-            <button
-              type="button"
-              disabled={sending}
-              onClick={() => imageInputRef.current?.click()}
-              title="Gửi hình ảnh"
-              className="p-2.5 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 transition-colors disabled:opacity-50 cursor-pointer"
-            >
-              <ImageIcon className="w-4 h-4" />
-            </button>
+          {/* Image Picker (Images only) */}
+          <input
+            type="file"
+            ref={imageInputRef}
+            accept="image/*"
+            onChange={(e) => e.target.files?.[0] && handleSelectFile(e.target.files[0])}
+            className="hidden"
+            id="chat-image-upload"
+          />
+          <button
+            type="button"
+            disabled={sending}
+            onClick={() => imageInputRef.current?.click()}
+            title="Gửi hình ảnh"
+            className="p-2.5 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 transition-colors disabled:opacity-50 cursor-pointer"
+          >
+            <ImageIcon className="w-4 h-4" />
+          </button>
 
-            <input
-              type="text"
-              value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
-              onPaste={handlePaste}
-              placeholder={
-                pendingFile
-                  ? 'Thêm chú thích cho ảnh/tệp (nhấn Enter để gửi)...'
-                  : 'Nhập tin nhắn (hoặc nhấn Ctrl + V để dán ảnh)...'
-              }
-              disabled={sending}
-              className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 text-slate-900 placeholder:text-slate-400 transition-all"
-            />
+          <input
+            type="text"
+            value={inputMessage}
+            onChange={(e) => setInputMessage(e.target.value)}
+            onPaste={handlePaste}
+            placeholder={
+              pendingFile
+                ? 'Thêm chú thích cho ảnh/tệp (nhấn Enter để gửi)...'
+                : currentUser
+                ? 'Nhập tin nhắn trao đổi (hoặc nhấn Ctrl + V để dán ảnh)...'
+                : 'Nhập phản hồi với tư cách Khách (hoặc nhấn Ctrl + V để dán ảnh)...'
+            }
+            disabled={sending}
+            className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 text-slate-900 placeholder:text-slate-400 transition-all"
+          />
 
-            <button
-              type="submit"
-              disabled={sending || (!inputMessage.trim() && !pendingFile)}
-              className="p-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md shadow-indigo-100 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex-shrink-0"
-            >
-              {sending ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Send className="w-4 h-4" />
-              )}
-            </button>
-          </form>
-        </div>
-      ) : (
-        /* Guest: banner đăng nhập để reply */
-        <div className="p-3 border-t border-slate-100 bg-slate-50/70">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs text-slate-500">
-              Bạn đang xem với tư cách <span className="font-semibold">khách</span> — chỉ đọc
-            </p>
-            <a
-              href="/login"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm"
-            >
-              <Send className="w-3 h-3" />
-              Đăng nhập để phản hồi
+          <button
+            type="submit"
+            disabled={sending || (!inputMessage.trim() && !pendingFile)}
+            className="p-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md shadow-indigo-100 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex-shrink-0"
+          >
+            {sending ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
+          </button>
+        </form>
+
+        {/* Subtle footer notice for guest */}
+        {!currentUser && (
+          <div className="mt-2 px-1 text-[11px] text-slate-400 flex items-center justify-between">
+            <span>Bạn đang trao đổi với tư cách <b>Khách</b> (không cần đăng nhập)</span>
+            <a href="/login" className="text-indigo-600 hover:underline font-medium">
+              Đăng nhập nếu bạn là Agent/Admin
             </a>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Fullscreen Image Preview Lightbox Modal */}
       {previewModalImg && (

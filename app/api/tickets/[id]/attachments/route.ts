@@ -17,14 +17,12 @@ export async function POST(
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) {
-      return NextResponse.json({ error: 'Chưa đăng nhập' }, { status: 401 });
-    }
-
+    const senderId = user ? user.id : null;
     const ticketId = params.id;
+    const adminClient = createAdminClient();
 
     // Lấy thông tin ticket để lấy drive_folder_id
-    const { data: ticket, error: ticketErr } = await supabase
+    const { data: ticket, error: ticketErr } = await adminClient
       .from('tickets')
       .select('id, drive_folder_id')
       .eq('id', ticketId)
@@ -38,7 +36,6 @@ export async function POST(
     if (!folderId) {
       // Nếu chưa có folder thì tạo mới trên Drive
       folderId = await createTicketFolder(ticket.id);
-      const adminClient = createAdminClient();
       await adminClient
         .from('tickets')
         .update({ drive_folder_id: folderId })
@@ -65,14 +62,12 @@ export async function POST(
       buffer,
     });
 
-    const adminClient = createAdminClient();
-
     // 1. Tạo tin nhắn chat với message_type là file_ref
     const { data: chatLog, error: chatErr } = await adminClient
       .from('chat_logs')
       .insert({
         ticket_id: ticketId,
-        sender_id: user.id,
+        sender_id: senderId,
         message: messageText.trim() || `Đã đính kèm tệp: ${fileName}`,
         message_type: 'file_ref',
       })
@@ -95,10 +90,16 @@ export async function POST(
         drive_file_id: driveResult.fileId,
         file_name: fileName,
         file_type: mimeType,
-        uploaded_by: user.id,
+        uploaded_by: senderId,
       })
       .select('*')
       .single();
+
+    // 3. Cập nhật updated_at của ticket
+    await adminClient
+      .from('tickets')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', ticketId);
 
     if (attachErr) {
       console.error('Lỗi tạo attachment record:', attachErr);

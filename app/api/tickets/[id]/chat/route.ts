@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,18 +9,10 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Chưa đăng nhập' }, { status: 401 });
-    }
-
     const ticketId = params.id;
+    const adminClient = createAdminClient();
 
-    const { data: messages, error } = await supabase
+    const { data: messages, error } = await adminClient
       .from('chat_logs')
       .select(`
         *,
@@ -50,10 +43,6 @@ export async function POST(
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) {
-      return NextResponse.json({ error: 'Chưa đăng nhập' }, { status: 401 });
-    }
-
     const ticketId = params.id;
     const body = await request.json();
     const { message, message_type = 'text' } = body;
@@ -62,11 +51,16 @@ export async function POST(
       return NextResponse.json({ error: 'Nội dung tin nhắn không được để trống' }, { status: 400 });
     }
 
-    const { data: chatLog, error } = await supabase
+    const adminClient = createAdminClient();
+
+    // Nếu đã đăng nhập thì lấy user.id, nếu là khách thì sender_id là null
+    const senderId = user ? user.id : null;
+
+    const { data: chatLog, error } = await adminClient
       .from('chat_logs')
       .insert({
         ticket_id: ticketId,
-        sender_id: user.id,
+        sender_id: senderId,
         message: message.trim(),
         message_type: message_type,
       })
@@ -81,7 +75,7 @@ export async function POST(
     }
 
     // Cập nhật updated_at của ticket để hiển thị ticket vừa có hoạt động mới
-    await supabase
+    await adminClient
       .from('tickets')
       .update({ updated_at: new Date().toISOString() })
       .eq('id', ticketId);

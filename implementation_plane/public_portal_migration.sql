@@ -102,9 +102,43 @@ CREATE POLICY "Allow public read ticket_tags"
 -- ============================================================
 
 -- ============================================================
--- chat_logs: Cho phép sender_id nullable (cho system log của guest ticket)
+-- chat_logs: Cho phép sender_id nullable (cho guest nhắn tin & system log)
 -- ============================================================
 
 ALTER TABLE public.chat_logs
   ALTER COLUMN sender_id DROP NOT NULL;
+
+DROP POLICY IF EXISTS "Allow public read chat_logs" ON public.chat_logs;
+DROP POLICY IF EXISTS "Allow public insert chat_logs" ON public.chat_logs;
+
+CREATE POLICY "Allow public read chat_logs"
+  ON public.chat_logs
+  FOR SELECT
+  USING (true);
+
+CREATE POLICY "Allow public insert chat_logs"
+  ON public.chat_logs
+  FOR INSERT
+  WITH CHECK (true);
+
+-- ============================================================
+-- attachments: Cho phép uploaded_by nullable (cho guest đính kèm file/ảnh)
+-- ============================================================
+
+ALTER TABLE public.attachments
+  ALTER COLUMN uploaded_by DROP NOT NULL;
+
+DROP POLICY IF EXISTS "Allow public read attachments" ON public.attachments;
+DROP POLICY IF EXISTS "Allow public insert attachments" ON public.attachments;
+
+CREATE POLICY "Allow public read attachments"
+  ON public.attachments
+  FOR SELECT
+  USING (true);
+
+CREATE POLICY "Allow public insert attachments"
+  ON public.attachments
+  FOR INSERT
+  WITH CHECK (true);
+
 
