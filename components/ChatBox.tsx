@@ -20,7 +20,7 @@ import { FormattedText } from '@/components/FormattedText';
 
 interface Props {
   ticketId: string;
-  currentUser: UserProfile;
+  currentUser: UserProfile | null;
   driveFolderId?: string | null;
 }
 
@@ -261,7 +261,7 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
               );
             }
 
-            const isMe = msg.sender_id === currentUser.id;
+            const isMe = currentUser ? msg.sender_id === currentUser.id : false;
             const role = msg.sender?.role;
             const attachedList: Attachment[] =
               msg.attachments && msg.attachments.length > 0
@@ -432,73 +432,91 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
         </div>
       )}
 
-      {/* Input area */}
-      <div className="p-3 border-t border-slate-100 bg-white">
-        <form onSubmit={handleSendMessage} className="flex items-center gap-2">
-          {/* File Picker (Any file) */}
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={(e) => e.target.files?.[0] && handleSelectFile(e.target.files[0])}
-            className="hidden"
-            id="chat-file-upload"
-          />
-          <button
-            type="button"
-            disabled={sending}
-            onClick={() => fileInputRef.current?.click()}
-            title="Đính kèm tài liệu (PDF, Word, Excel, ZIP...)"
-            className="p-2.5 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 transition-colors disabled:opacity-50 cursor-pointer"
-          >
-            <Paperclip className="w-4 h-4" />
-          </button>
+      {/* Input area - chỉ hiện khi đã đăng nhập */}
+      {currentUser ? (
+        <div className="p-3 border-t border-slate-100 bg-white">
+          <form onSubmit={handleSendMessage} className="flex items-center gap-2">
+            {/* File Picker (Any file) */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={(e) => e.target.files?.[0] && handleSelectFile(e.target.files[0])}
+              className="hidden"
+              id="chat-file-upload"
+            />
+            <button
+              type="button"
+              disabled={sending}
+              onClick={() => fileInputRef.current?.click()}
+              title="Đính kèm tài liệu (PDF, Word, Excel, ZIP...)"
+              className="p-2.5 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              <Paperclip className="w-4 h-4" />
+            </button>
 
-          {/* Image Picker (Images only) */}
-          <input
-            type="file"
-            ref={imageInputRef}
-            accept="image/*"
-            onChange={(e) => e.target.files?.[0] && handleSelectFile(e.target.files[0])}
-            className="hidden"
-            id="chat-image-upload"
-          />
-          <button
-            type="button"
-            disabled={sending}
-            onClick={() => imageInputRef.current?.click()}
-            title="Gửi hình ảnh"
-            className="p-2.5 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 transition-colors disabled:opacity-50 cursor-pointer"
-          >
-            <ImageIcon className="w-4 h-4" />
-          </button>
+            {/* Image Picker (Images only) */}
+            <input
+              type="file"
+              ref={imageInputRef}
+              accept="image/*"
+              onChange={(e) => e.target.files?.[0] && handleSelectFile(e.target.files[0])}
+              className="hidden"
+              id="chat-image-upload"
+            />
+            <button
+              type="button"
+              disabled={sending}
+              onClick={() => imageInputRef.current?.click()}
+              title="Gửi hình ảnh"
+              className="p-2.5 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              <ImageIcon className="w-4 h-4" />
+            </button>
 
-          <input
-            type="text"
-            value={inputMessage}
-            onChange={(e) => setInputMessage(e.target.value)}
-            onPaste={handlePaste}
-            placeholder={
-              pendingFile
-                ? 'Thêm chú thích cho ảnh/tệp (nhấn Enter để gửi)...'
-                : 'Nhập tin nhắn (hoặc nhấn Ctrl + V để dán ảnh)...'
-            }
-            disabled={sending}
-            className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 text-slate-900 placeholder:text-slate-400 transition-all"
-          />
+            <input
+              type="text"
+              value={inputMessage}
+              onChange={(e) => setInputMessage(e.target.value)}
+              onPaste={handlePaste}
+              placeholder={
+                pendingFile
+                  ? 'Thêm chú thích cho ảnh/tệp (nhấn Enter để gửi)...'
+                  : 'Nhập tin nhắn (hoặc nhấn Ctrl + V để dán ảnh)...'
+              }
+              disabled={sending}
+              className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 text-slate-900 placeholder:text-slate-400 transition-all"
+            />
 
-          <button
-            type="submit"
-            disabled={sending || (!inputMessage.trim() && !pendingFile)}
-            className="p-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md shadow-indigo-100 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex-shrink-0"
-          >
-            {sending ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Send className="w-4 h-4" />
-            )}
-          </button>
-        </form>
-      </div>
+            <button
+              type="submit"
+              disabled={sending || (!inputMessage.trim() && !pendingFile)}
+              className="p-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md shadow-indigo-100 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex-shrink-0"
+            >
+              {sending ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Send className="w-4 h-4" />
+              )}
+            </button>
+          </form>
+        </div>
+      ) : (
+        /* Guest: banner đăng nhập để reply */
+        <div className="p-3 border-t border-slate-100 bg-slate-50/70">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-slate-500">
+              Bạn đang xem với tư cách <span className="font-semibold">khách</span> — chỉ đọc
+            </p>
+            <a
+              href="/login"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm"
+            >
+              <Send className="w-3 h-3" />
+              Đăng nhập để phản hồi
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* Fullscreen Image Preview Lightbox Modal */}
       {previewModalImg && (

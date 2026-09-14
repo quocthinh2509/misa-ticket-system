@@ -528,38 +528,12 @@ export default function TicketDetailPage() {
 
         {/* Right Column: Chat */}
         <div className="lg:col-span-7">
-          {isLoggedIn && currentUser ? (
-            /* Chat đầy đủ cho user đã đăng nhập */
-            <ChatBox
-              ticketId={ticket.id}
-              currentUser={currentUser}
-              driveFolderId={ticket.drive_folder_id}
-            />
-          ) : (
-            /* Thông báo chat cho guest */
-            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-              <div className="p-4 border-b border-slate-100 bg-slate-50">
-                <h3 className="text-sm font-bold text-slate-700">Lịch sử hỗ trợ</h3>
-              </div>
-              <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
-                <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-500 flex items-center justify-center mb-4">
-                  <Lock className="w-7 h-7" />
-                </div>
-                <h4 className="text-base font-bold text-slate-800 mb-2">
-                  Đăng nhập để xem & trả lời
-                </h4>
-                <p className="text-sm text-slate-500 max-w-xs mb-6">
-                  Phần hội thoại hỗ trợ chỉ dành cho nhân viên và người dùng đã đăng nhập.
-                </p>
-                <Link
-                  href="/login"
-                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-md shadow-indigo-100"
-                >
-                  Đăng nhập
-                </Link>
-              </div>
-            </div>
-          )}
+          {/* ChatBox hiển thị cho cả guest (read-only) và user đã đăng nhập */}
+          <ChatBox
+            ticketId={ticket.id}
+            currentUser={currentUser}
+            driveFolderId={ticket.drive_folder_id}
+          />
         </div>
       </div>
     </div>
