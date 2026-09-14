@@ -2,6 +2,7 @@
 -- Migration: Public Ticket Portal
 -- Thêm cột guest_name và guest_email vào bảng tickets
 -- Cho phép created_by nullable (cho guest tickets)
+-- Cập nhật RLS policies cho tickets, tags, chat_logs, attachments
 -- ============================================================
 
 -- 1. Thêm cột guest_name và guest_email vào bảng tickets
@@ -18,18 +19,21 @@ COMMENT ON COLUMN public.tickets.guest_name IS 'Tên người tạo ticket khi k
 COMMENT ON COLUMN public.tickets.guest_email IS 'Email người tạo ticket khi không có tài khoản (guest), dùng để nhận thông báo';
 
 -- ============================================================
--- RLS (Row Level Security) - Cập nhật cho phép public access
+-- RLS (Row Level Security) - Tickets
 -- ============================================================
 
--- Bật RLS nếu chưa bật
 ALTER TABLE public.tickets ENABLE ROW LEVEL SECURITY;
 
--- Xóa policy cũ nếu có
+-- Xóa tất cả các policy tickets cũ và mới nếu đã tồn tại
+DROP POLICY IF EXISTS "View tickets policy" ON public.tickets;
+DROP POLICY IF EXISTS "Create tickets policy" ON public.tickets;
+DROP POLICY IF EXISTS "Update tickets policy" ON public.tickets;
 DROP POLICY IF EXISTS "Allow public read tickets" ON public.tickets;
 DROP POLICY IF EXISTS "Allow authenticated read own tickets" ON public.tickets;
 DROP POLICY IF EXISTS "Allow public insert guest tickets" ON public.tickets;
 DROP POLICY IF EXISTS "Allow authenticated insert tickets" ON public.tickets;
 DROP POLICY IF EXISTS "Allow staff update tickets" ON public.tickets;
+DROP POLICY IF EXISTS "Allow creator update own ticket" ON public.tickets;
 
 -- Policy: Cho phép tất cả mọi người đọc tickets (public portal)
 CREATE POLICY "Allow public read tickets"
@@ -73,6 +77,7 @@ CREATE POLICY "Allow creator update own ticket"
 
 ALTER TABLE public.tags ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "View tags policy" ON public.tags;
 DROP POLICY IF EXISTS "Allow public read tags" ON public.tags;
 
 CREATE POLICY "Allow public read tags"
@@ -86,6 +91,7 @@ CREATE POLICY "Allow public read tags"
 
 ALTER TABLE public.ticket_tags ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "View ticket_tags policy" ON public.ticket_tags;
 DROP POLICY IF EXISTS "Allow public read ticket_tags" ON public.ticket_tags;
 
 CREATE POLICY "Allow public read ticket_tags"
@@ -94,20 +100,16 @@ CREATE POLICY "Allow public read ticket_tags"
   USING (true);
 
 -- ============================================================
--- NOTES:
--- - API routes dùng createAdminClient() (service role) để bypass RLS
---   nên các policy trên chủ yếu ảnh hưởng direct DB access
--- - Nếu bạn dùng Supabase JS client trực tiếp từ frontend thì
---   các RLS policy này sẽ apply
--- ============================================================
-
--- ============================================================
--- chat_logs: Cho phép sender_id nullable (cho guest nhắn tin & system log)
+-- chat_logs: Cho phép sender_id nullable & Public access
 -- ============================================================
 
 ALTER TABLE public.chat_logs
   ALTER COLUMN sender_id DROP NOT NULL;
 
+ALTER TABLE public.chat_logs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "View chat logs policy" ON public.chat_logs;
+DROP POLICY IF EXISTS "Insert chat logs policy" ON public.chat_logs;
 DROP POLICY IF EXISTS "Allow public read chat_logs" ON public.chat_logs;
 DROP POLICY IF EXISTS "Allow public insert chat_logs" ON public.chat_logs;
 
@@ -122,12 +124,16 @@ CREATE POLICY "Allow public insert chat_logs"
   WITH CHECK (true);
 
 -- ============================================================
--- attachments: Cho phép uploaded_by nullable (cho guest đính kèm file/ảnh)
+-- attachments: Cho phép uploaded_by nullable & Public access
 -- ============================================================
 
 ALTER TABLE public.attachments
   ALTER COLUMN uploaded_by DROP NOT NULL;
 
+ALTER TABLE public.attachments ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "View attachments policy" ON public.attachments;
+DROP POLICY IF EXISTS "Insert attachments policy" ON public.attachments;
 DROP POLICY IF EXISTS "Allow public read attachments" ON public.attachments;
 DROP POLICY IF EXISTS "Allow public insert attachments" ON public.attachments;
 
@@ -140,5 +146,6 @@ CREATE POLICY "Allow public insert attachments"
   ON public.attachments
   FOR INSERT
   WITH CHECK (true);
+
 
 
