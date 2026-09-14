@@ -4,11 +4,30 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { TicketPriority, Tag } from '@/lib/types';
-import { ArrowLeft, Loader2, Upload, AlertCircle, FileText, CheckCircle2, X, Tag as TagIcon, Check } from 'lucide-react';
+import {
+  ArrowLeft,
+  Loader2,
+  Upload,
+  AlertCircle,
+  FileText,
+  CheckCircle2,
+  X,
+  Tag as TagIcon,
+  Check,
+  User,
+  Mail,
+  Info,
+} from 'lucide-react';
 
 export default function NewTicketPage() {
   const router = useRouter();
 
+  // Guest info
+  const [guestName, setGuestName] = useState('');
+  const [guestEmail, setGuestEmail] = useState('');
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
+
+  // Ticket fields
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<TicketPriority>('medium');
@@ -18,6 +37,21 @@ export default function NewTicketPage() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [statusStep, setStatusStep] = useState('');
+
+  // Kiểm tra trạng thái đăng nhập
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const { createClient } = await import('@/lib/supabase/client');
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        setIsLoggedIn(!!user);
+      } catch {
+        setIsLoggedIn(false);
+      }
+    };
+    checkAuth();
+  }, []);
 
   // Lấy danh sách nhãn có sẵn
   useEffect(() => {
@@ -48,8 +82,15 @@ export default function NewTicketPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!title.trim()) {
       setErrorMsg('Vui lòng nhập tiêu đề sự cố');
+      return;
+    }
+
+    // Với guest, tên là bắt buộc
+    if (!isLoggedIn && !guestName.trim()) {
+      setErrorMsg('Vui lòng nhập tên của bạn');
       return;
     }
 
@@ -58,16 +99,23 @@ export default function NewTicketPage() {
     setStatusStep('Đang khởi tạo ticket & thư mục Google Drive...');
 
     try {
-      // 1. Tạo ticket kèm tag_ids
+      // 1. Tạo ticket kèm tag_ids và thông tin guest (nếu chưa đăng nhập)
+      const body: any = {
+        title: title.trim(),
+        description: description.trim(),
+        priority,
+        tag_ids: selectedTagIds,
+      };
+
+      if (!isLoggedIn) {
+        body.guest_name = guestName.trim();
+        body.guest_email = guestEmail.trim() || null;
+      }
+
       const res = await fetch('/api/tickets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: title.trim(),
-          description: description.trim(),
-          priority,
-          tag_ids: selectedTagIds,
-        }),
+        body: JSON.stringify(body),
       });
 
       const data = await res.json();
@@ -121,7 +169,7 @@ export default function NewTicketPage() {
             Tạo Yêu cầu Hỗ trợ Mới
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Điền chi tiết sự cố cần trợ giúp kỹ thuật. Hệ thống sẽ tự động tạo thư mục Google Drive riêng cho ticket này.
+            Mô tả sự cố bạn gặp phải. Đội ngũ hỗ trợ sẽ phản hồi sớm nhất có thể.
           </p>
         </div>
 
@@ -133,6 +181,61 @@ export default function NewTicketPage() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Thông tin người dùng - chỉ hiện khi chưa đăng nhập */}
+          {isLoggedIn === false && (
+            <div className="p-4 rounded-xl bg-indigo-50 border border-indigo-200 space-y-4">
+              <div className="flex items-start gap-2">
+                <Info className="w-4 h-4 text-indigo-600 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-indigo-700 font-medium">
+                  Bạn không cần đăng nhập để gửi yêu cầu hỗ trợ. Vui lòng nhập thông tin bên dưới để chúng tôi có thể liên hệ lại với bạn.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Tên */}
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                    <span className="flex items-center gap-1.5">
+                      <User className="w-4 h-4 text-indigo-500" />
+                      Tên của bạn <span className="text-rose-500">*</span>
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    required={!isLoggedIn}
+                    value={guestName}
+                    onChange={(e) => setGuestName(e.target.value)}
+                    placeholder="Nguyễn Văn A"
+                    className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 text-slate-900 placeholder:text-slate-400 transition-all"
+                  />
+                </div>
+
+                {/* Email */}
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                    <span className="flex items-center gap-1.5">
+                      <Mail className="w-4 h-4 text-indigo-500" />
+                      Email{' '}
+                      <span className="text-xs text-slate-400 font-normal">(Tùy chọn)</span>
+                    </span>
+                  </label>
+                  <input
+                    type="email"
+                    value={guestEmail}
+                    onChange={(e) => setGuestEmail(e.target.value)}
+                    placeholder="email@example.com"
+                    className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 text-slate-900 placeholder:text-slate-400 transition-all"
+                  />
+                  <p className="text-xs text-slate-400 mt-1.5 flex items-center gap-1">
+                    <Mail className="w-3 h-3" />
+                    Nhập email để nhận thông báo khi ticket được xử lý
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Tiêu đề */}
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-2">
               Tiêu đề sự cố <span className="text-rose-500">*</span>
@@ -303,7 +406,7 @@ export default function NewTicketPage() {
               ) : (
                 <>
                   <CheckCircle2 className="w-4 h-4" />
-                  Tạo Ticket
+                  Gửi Yêu cầu Hỗ trợ
                 </>
               )}
             </button>

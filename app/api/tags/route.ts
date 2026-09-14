@@ -4,19 +4,13 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
 
-// GET: Lấy danh sách toàn bộ tag
+// GET: Lấy danh sách toàn bộ tag (public - không cần đăng nhập)
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    // Dùng admin client để bypass RLS, cho phép public đọc tags
+    const adminClient = createAdminClient();
 
-    if (!user) {
-      return NextResponse.json({ error: 'Chưa đăng nhập' }, { status: 401 });
-    }
-
-    const { data: tags, error } = await supabase
+    const { data: tags, error } = await adminClient
       .from('tags')
       .select('*')
       .order('name', { ascending: true });
@@ -30,6 +24,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
 
 // POST: Tạo tag mới - CHỈ DÀNH CHO ADMIN
 export async function POST(request: NextRequest) {

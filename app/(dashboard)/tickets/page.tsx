@@ -2,9 +2,23 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Ticket, TicketStatus, TicketPriority, Tag } from '@/lib/types';
-import { TicketCard } from '@/components/TicketCard';
-import { PlusCircle, Search, Filter, Inbox, Loader2, RefreshCw, Tag as TagIcon } from 'lucide-react';
+import { Ticket, Tag } from '@/lib/types';
+import { TicketStatusBadge } from '@/components/TicketStatusBadge';
+import { TicketPriorityBadge } from '@/components/TicketPriorityBadge';
+import { TagBadge } from '@/components/TagBadge';
+import { formatDate } from '@/lib/utils';
+import {
+  PlusCircle,
+  Search,
+  Filter,
+  Inbox,
+  Loader2,
+  RefreshCw,
+  Tag as TagIcon,
+  ChevronRight,
+  User,
+  Hash,
+} from 'lucide-react';
 
 export default function TicketsListPage() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -55,11 +69,12 @@ export default function TicketsListPage() {
       tagFilter === 'all' ||
       (ticket.tags && ticket.tags.some((t) => t.id === tagFilter));
 
+    const creatorName = ticket.creator?.full_name || ticket.guest_name || '';
     const matchQuery =
       searchQuery.trim() === '' ||
       ticket.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (ticket.description && ticket.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (ticket.creator?.full_name && ticket.creator.full_name.toLowerCase().includes(searchQuery.toLowerCase()));
+      creatorName.toLowerCase().includes(searchQuery.toLowerCase());
 
     return matchStatus && matchPriority && matchTag && matchQuery;
   });
@@ -72,16 +87,23 @@ export default function TicketsListPage() {
     { id: 'closed', label: 'Đã đóng' },
   ];
 
+  // Lấy tên hiển thị của người tạo ticket
+  const getCreatorDisplay = (ticket: Ticket) => {
+    if (ticket.creator?.full_name) return ticket.creator.full_name;
+    if (ticket.guest_name) return ticket.guest_name;
+    return 'Khách';
+  };
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-            Quản lý Ticket & Yêu cầu Hỗ trợ
+            Hệ thống Hỗ trợ Kỹ thuật
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Theo dõi, phân công và xử lý các sự cố kỹ thuật từ người dùng
+            Gửi yêu cầu hỗ trợ hoặc theo dõi tiến độ xử lý ticket của bạn
           </p>
         </div>
 
@@ -193,17 +215,106 @@ export default function TicketsListPage() {
         </div>
       </div>
 
-      {/* Ticket List */}
+      {/* Ticket Table */}
       {loading ? (
         <div className="flex flex-col items-center justify-center py-20 bg-white rounded-2xl border border-slate-200/80">
           <Loader2 className="w-8 h-8 text-indigo-600 animate-spin mb-3" />
           <p className="text-sm text-slate-500 font-medium">Đang tải danh sách ticket...</p>
         </div>
       ) : filteredTickets.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {filteredTickets.map((ticket) => (
-            <TicketCard key={ticket.id} ticket={ticket} />
-          ))}
+        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+          {/* Table Header */}
+          <div className="grid grid-cols-[2rem_1fr_7rem_7rem_8rem_7rem_7rem_2rem] items-center gap-3 px-4 py-3 bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+            <div className="flex items-center gap-1">
+              <Hash className="w-3 h-3" />
+            </div>
+            <div>Tiêu đề</div>
+            <div>Trạng thái</div>
+            <div>Ưu tiên</div>
+            <div>Nhãn</div>
+            <div className="flex items-center gap-1">
+              <User className="w-3 h-3" />
+              Người tạo
+            </div>
+            <div>Ngày tạo</div>
+            <div></div>
+          </div>
+
+          {/* Table Rows */}
+          <div className="divide-y divide-slate-100">
+            {filteredTickets.map((ticket, index) => (
+              <Link
+                key={ticket.id}
+                href={`/tickets/${ticket.id}`}
+                className="grid grid-cols-[2rem_1fr_7rem_7rem_8rem_7rem_7rem_2rem] items-center gap-3 px-4 py-3.5 hover:bg-indigo-50/40 transition-colors group cursor-pointer"
+              >
+                {/* Index */}
+                <div className="text-xs text-slate-400 font-mono">
+                  {index + 1}
+                </div>
+
+                {/* Title */}
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-slate-800 group-hover:text-indigo-700 truncate transition-colors">
+                    {ticket.title}
+                  </p>
+                  {ticket.description && (
+                    <p className="text-xs text-slate-400 truncate mt-0.5">
+                      {ticket.description}
+                    </p>
+                  )}
+                </div>
+
+                {/* Status */}
+                <div>
+                  <TicketStatusBadge status={ticket.status} />
+                </div>
+
+                {/* Priority */}
+                <div>
+                  <TicketPriorityBadge priority={ticket.priority} />
+                </div>
+
+                {/* Tags */}
+                <div className="flex flex-wrap gap-1 min-w-0">
+                  {ticket.tags && ticket.tags.length > 0 ? (
+                    <>
+                      <TagBadge tag={ticket.tags[0]} size="sm" />
+                      {ticket.tags.length > 1 && (
+                        <span className="text-xs text-slate-400 px-1.5 py-0.5 rounded-full bg-slate-100">
+                          +{ticket.tags.length - 1}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-xs text-slate-300 italic">—</span>
+                  )}
+                </div>
+
+                {/* Creator */}
+                <div className="text-xs text-slate-600 truncate">
+                  {getCreatorDisplay(ticket)}
+                </div>
+
+                {/* Date */}
+                <div className="text-xs text-slate-400">
+                  {formatDate(ticket.created_at)}
+                </div>
+
+                {/* Arrow */}
+                <div className="flex justify-end">
+                  <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-500 transition-colors" />
+                </div>
+              </Link>
+            ))}
+          </div>
+
+          {/* Table Footer */}
+          <div className="px-4 py-3 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between">
+            <p className="text-xs text-slate-500">
+              Hiển thị <span className="font-semibold text-slate-700">{filteredTickets.length}</span> / {tickets.length} ticket
+            </p>
+          </div>
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center py-16 bg-white rounded-2xl border border-dashed border-slate-300 text-center px-4">

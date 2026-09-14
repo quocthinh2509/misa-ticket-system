@@ -7,26 +7,11 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Chưa đăng nhập' }, { status: 401 });
-    }
-
-    // Get current user role
-    const { data: profile } = await supabase
-      .from('users')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-
-    const role = profile?.role || 'user';
+    // Dùng admin client để có thể đọc tickets bất kể RLS
+    const adminClient = createAdminClient();
 
     // Build query
-    let query = supabase
+    const { data: rawTickets, error } = await adminClient
       .from('tickets')
       .select(`
         *,
@@ -37,13 +22,6 @@ export async function GET(request: NextRequest) {
         )
       `)
       .order('created_at', { ascending: false });
-
-    // Users can only view their own tickets; agents and admins can view all
-    if (role === 'user') {
-      query = query.eq('created_by', user.id);
-    }
-
-    const { data: rawTickets, error } = await query;
 
     if (error) {
       console.error('Lỗi truy vấn tickets:', error);
@@ -65,32 +43,47 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Chưa đăng nhập' }, { status: 401 });
-    }
-
     const body = await request.json();
-    const { title, description, priority, tag_ids = [] } = body;
+    const { title, description, priority, tag_ids = [], guest_name, guest_email } = body;
 
     if (!title || !title.trim()) {
       return NextResponse.json({ error: 'Tiêu đề không được để trống' }, { status: 400 });
     }
 
+    // Kiểm tra xem có user đăng nhập không
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    // Nếu không có user, yêu cầu guest_name
+    if (!user && !guest_name?.trim()) {
+      return NextResponse.json({ error: 'Vui lòng nhập tên của bạn' }, { status: 400 });
+    }
+
+    // Dùng admin client để bypass RLS
+    const adminClient = createAdminClient();
+
     // 1. Insert ticket row
-    const { data: ticket, error: insertError } = await supabase
+    const insertPayload: any = {
+      title: title.trim(),
+      description: description?.trim() || null,
+      priority: priority || 'medium',
+      status: 'open',
+    };
+
+    if (user) {
+      insertPayload.created_by = user.id;
+    } else {
+      // Guest ticket
+      insertPayload.created_by = null;
+      insertPayload.guest_name = guest_name.trim();
+      insertPayload.guest_email = guest_email?.trim() || null;
+    }
+
+    const { data: ticket, error: insertError } = await adminClient
       .from('tickets')
-      .insert({
-        title: title.trim(),
-        description: description?.trim() || null,
-        priority: priority || 'medium',
-        created_by: user.id,
-        status: 'open',
-      })
+      .insert(insertPayload)
       .select('*')
       .single();
 
@@ -108,7 +101,7 @@ export async function POST(request: NextRequest) {
         ticket_id: ticket.id,
         tag_id: tagId,
       }));
-      await supabase.from('ticket_tags').insert(tagInserts);
+      await adminClient.from('ticket_tags').insert(tagInserts);
     }
 
     // 2. Tạo folder con trên Google Drive qua Service Account
@@ -116,8 +109,7 @@ export async function POST(request: NextRequest) {
     try {
       driveFolderId = await createTicketFolder(ticket.id);
 
-      // Cập nhật drive_folder_id vào ticket (dùng admin client để đảm bảo update được)
-      const adminClient = createAdminClient();
+      // Cập nhật drive_folder_id vào ticket
       await adminClient
         .from('tickets')
         .update({ drive_folder_id: driveFolderId })
@@ -126,16 +118,19 @@ export async function POST(request: NextRequest) {
       ticket.drive_folder_id = driveFolderId;
     } catch (driveErr: any) {
       console.warn('Lỗi khi tạo Google Drive folder cho ticket:', driveErr);
-      // Vẫn tiếp tục nếu Drive tạm thời lỗi, admin có thể retry sau
+      // Vẫn tiếp tục nếu Drive tạm thời lỗi
     }
 
     // 3. Tạo tin nhắn system log đầu tiên
     try {
-      const adminClient = createAdminClient();
+      const creatorName = user
+        ? (await supabase.from('users').select('full_name').eq('id', user.id).single()).data?.full_name || 'Người dùng'
+        : guest_name?.trim() || 'Khách';
+
       await adminClient.from('chat_logs').insert({
         ticket_id: ticket.id,
-        sender_id: user.id,
-        message: `Ticket đã được khởi tạo với trạng thái Mới tạo.`,
+        sender_id: user?.id || null,
+        message: `Ticket đã được khởi tạo bởi ${creatorName} với trạng thái Mới tạo.`,
         message_type: 'system',
       });
     } catch (logErr) {

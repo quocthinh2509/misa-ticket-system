@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Ticket, UserProfile, Attachment, TicketStatus, TicketPriority, Tag } from '@/lib/types';
 import { TicketStatusBadge } from '@/components/TicketStatusBadge';
@@ -25,17 +25,18 @@ import {
   Building,
   Tag as TagIcon,
   Plus,
+  Mail,
+  Lock,
 } from 'lucide-react';
 
 export default function TicketDetailPage() {
   const params = useParams();
-  const router = useRouter();
   const ticketId = params.id as string;
-  const supabase = createClient();
 
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
   const [staffUsers, setStaffUsers] = useState<UserProfile[]>([]);
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [isTagPickerOpen, setIsTagPickerOpen] = useState(false);
@@ -48,25 +49,25 @@ export default function TicketDetailPage() {
     try {
       setLoading(true);
 
-      // 1. Get current user
+      // 1. Kiểm tra trạng thái đăng nhập
+      const supabase = createClient();
       const {
         data: { user },
       } = await supabase.auth.getUser();
 
-      if (!user) {
-        router.push('/login');
-        return;
+      setIsLoggedIn(!!user);
+
+      if (user) {
+        const { data: profile } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+
+        setCurrentUser(profile);
       }
 
-      const { data: profile } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-
-      setCurrentUser(profile);
-
-      // 2. Fetch ticket detail
+      // 2. Fetch ticket detail (public endpoint)
       const res = await fetch(`/api/tickets/${ticketId}`);
       const data = await res.json();
 
@@ -85,15 +86,18 @@ export default function TicketDetailPage() {
       }
 
       // 4. If user is agent or admin, fetch staff list for assignee dropdown
-      if (profile?.role === 'admin' || profile?.role === 'agent') {
-        const staffRes = await fetch('/api/users');
-        const staffData = await staffRes.json();
-        if (staffData.users) {
-          setStaffUsers(
-            staffData.users.filter(
-              (u: UserProfile) => u.role === 'admin' || u.role === 'agent'
-            )
-          );
+      if (user) {
+        const profileData = await supabase.from('users').select('role').eq('id', user.id).single();
+        if (profileData.data?.role === 'admin' || profileData.data?.role === 'agent') {
+          const staffRes = await fetch('/api/users');
+          const staffData = await staffRes.json();
+          if (staffData.users) {
+            setStaffUsers(
+              staffData.users.filter(
+                (u: UserProfile) => u.role === 'admin' || u.role === 'agent'
+              )
+            );
+          }
         }
       }
     } catch (err: any) {
@@ -185,7 +189,7 @@ export default function TicketDetailPage() {
     );
   }
 
-  if (errorMsg || !ticket || !currentUser) {
+  if (errorMsg || !ticket) {
     return (
       <div className="max-w-xl mx-auto py-12 text-center">
         <div className="inline-flex p-3 rounded-full bg-rose-50 text-rose-500 mb-4">
@@ -207,7 +211,9 @@ export default function TicketDetailPage() {
     );
   }
 
-  const isStaff = currentUser.role === 'admin' || currentUser.role === 'agent';
+  const isStaff = currentUser?.role === 'admin' || currentUser?.role === 'agent';
+  const creatorDisplay = ticket.creator?.full_name || ticket.guest_name || 'Khách';
+  const creatorEmail = ticket.creator?.email || ticket.guest_email;
 
   return (
     <div className="space-y-6">
@@ -220,6 +226,14 @@ export default function TicketDetailPage() {
           <ArrowLeft className="w-4 h-4" />
           Quay lại danh sách ticket
         </Link>
+
+        {/* Guest badge */}
+        {!isLoggedIn && (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 border border-amber-200 text-amber-700 text-xs font-medium rounded-full">
+            <User className="w-3.5 h-3.5" />
+            Đang xem với tư cách khách
+          </span>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -247,107 +261,109 @@ export default function TicketDetailPage() {
                   <TagBadge
                     key={tag.id}
                     tag={tag}
-                    onRemove={() => handleRemoveTag(tag.id)}
+                    onRemove={isStaff ? () => handleRemoveTag(tag.id) : undefined}
                     size="md"
                   />
                 ))}
 
-                {/* Nút gắn thêm nhãn */}
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setIsTagPickerOpen(!isTagPickerOpen)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-slate-300 text-slate-600 hover:text-indigo-600 hover:border-indigo-400 bg-slate-50 hover:bg-indigo-50/50 transition-all cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Gắn nhãn
-                  </button>
+                {/* Nút gắn thêm nhãn - chỉ dành cho staff */}
+                {isStaff && (
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setIsTagPickerOpen(!isTagPickerOpen)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-slate-300 text-slate-600 hover:text-indigo-600 hover:border-indigo-400 bg-slate-50 hover:bg-indigo-50/50 transition-all cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Gắn nhãn
+                    </button>
 
-                  {/* Popover chọn nhãn */}
-                  {isTagPickerOpen && (
-                    <div className="absolute left-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 z-20 animate-in fade-in">
-                      <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1">
-                        Chọn nhãn để gắn
+                    {/* Popover chọn nhãn */}
+                    {isTagPickerOpen && (
+                      <div className="absolute left-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 z-20 animate-in fade-in">
+                        <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1">
+                          Chọn nhãn để gắn
+                        </div>
+                        <div className="max-h-48 overflow-y-auto space-y-1">
+                          {allTags.filter((t) => !(ticket.tags || []).some((tt) => tt.id === t.id)).length > 0 ? (
+                            allTags
+                              .filter((t) => !(ticket.tags || []).some((tt) => tt.id === t.id))
+                              .map((tag) => (
+                                <button
+                                  key={tag.id}
+                                  type="button"
+                                  onClick={() => handleAssignTag(tag.id)}
+                                  className="w-full text-left px-2.5 py-1.5 rounded-xl hover:bg-slate-50 flex items-center gap-2 text-xs transition-colors"
+                                >
+                                  <span
+                                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                                    style={{ backgroundColor: tag.color }}
+                                  />
+                                  <span className="font-medium text-slate-700 truncate">
+                                    {tag.name}
+                                  </span>
+                                </button>
+                              ))
+                          ) : (
+                            <div className="text-xs text-slate-400 italic p-2 text-center">
+                              Đã gắn hết các nhãn có sẵn
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <div className="max-h-48 overflow-y-auto space-y-1">
-                        {allTags.filter((t) => !(ticket.tags || []).some((tt) => tt.id === t.id)).length > 0 ? (
-                          allTags
-                            .filter((t) => !(ticket.tags || []).some((tt) => tt.id === t.id))
-                            .map((tag) => (
-                              <button
-                                key={tag.id}
-                                type="button"
-                                onClick={() => handleAssignTag(tag.id)}
-                                className="w-full text-left px-2.5 py-1.5 rounded-xl hover:bg-slate-50 flex items-center gap-2 text-xs transition-colors"
-                              >
-                                <span
-                                  className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                                  style={{ backgroundColor: tag.color }}
-                                />
-                                <span className="font-medium text-slate-700 truncate">
-                                  {tag.name}
-                                </span>
-                              </button>
-                            ))
-                        ) : (
-                          <div className="text-xs text-slate-400 italic p-2 text-center">
-                            Đã gắn hết các nhãn có sẵn
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Quick Actions (Change Status & Assignee) */}
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 space-y-3">
-              <div className="text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                Thao tác quản lý
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-slate-500 mb-1">
-                    Trạng thái
-                  </label>
-                  <select
-                    disabled={updating}
-                    value={ticket.status}
-                    onChange={(e) =>
-                      handleUpdate({ status: e.target.value as TicketStatus })
-                    }
-                    className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
-                  >
-                    <option value="open">Mới tạo</option>
-                    <option value="in_progress">Đang xử lý</option>
-                    <option value="resolved">Đã giải quyết</option>
-                    <option value="closed">Đã đóng</option>
-                  </select>
+            {/* Quick Actions (chỉ dành cho staff đã đăng nhập) */}
+            {isStaff ? (
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 space-y-3">
+                <div className="text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                  Thao tác quản lý
                 </div>
 
-                <div>
-                  <label className="block text-xs text-slate-500 mb-1">
-                    Mức độ ưu tiên
-                  </label>
-                  <select
-                    disabled={updating || !isStaff}
-                    value={ticket.priority}
-                    onChange={(e) =>
-                      handleUpdate({ priority: e.target.value as TicketPriority })
-                    }
-                    className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 disabled:bg-slate-100"
-                  >
-                    <option value="low">Thấp</option>
-                    <option value="medium">Trung bình</option>
-                    <option value="high">Cao</option>
-                    <option value="urgent">Khẩn cấp</option>
-                  </select>
-                </div>
-              </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1">
+                      Trạng thái
+                    </label>
+                    <select
+                      disabled={updating}
+                      value={ticket.status}
+                      onChange={(e) =>
+                        handleUpdate({ status: e.target.value as TicketStatus })
+                      }
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
+                    >
+                      <option value="open">Mới tạo</option>
+                      <option value="in_progress">Đang xử lý</option>
+                      <option value="resolved">Đã giải quyết</option>
+                      <option value="closed">Đã đóng</option>
+                    </select>
+                  </div>
 
-              {isStaff && (
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1">
+                      Mức độ ưu tiên
+                    </label>
+                    <select
+                      disabled={updating}
+                      value={ticket.priority}
+                      onChange={(e) =>
+                        handleUpdate({ priority: e.target.value as TicketPriority })
+                      }
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
+                    >
+                      <option value="low">Thấp</option>
+                      <option value="medium">Trung bình</option>
+                      <option value="high">Cao</option>
+                      <option value="urgent">Khẩn cấp</option>
+                    </select>
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-xs text-slate-500 mb-1">
                     Nhân viên phụ trách
@@ -368,8 +384,22 @@ export default function TicketDetailPage() {
                     ))}
                   </select>
                 </div>
-              )}
-            </div>
+              </div>
+            ) : (
+              /* Guest: chỉ xem trạng thái, không chỉnh sửa */
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80">
+                <div className="flex items-center gap-2 text-xs text-slate-500 mb-2">
+                  <Lock className="w-3.5 h-3.5" />
+                  <span className="font-semibold uppercase tracking-wider">Thông tin xử lý</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-500">Phụ trách:</span>
+                  <span className="text-xs font-semibold text-indigo-600">
+                    {ticket.assignee?.full_name || 'Chưa phân công'}
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* Description */}
             <div>
@@ -448,9 +478,17 @@ export default function TicketDetailPage() {
                 <span className="flex items-center gap-1.5 text-slate-400">
                   <User className="w-3.5 h-3.5" /> Người tạo:
                 </span>
-                <span className="font-semibold text-slate-700">
-                  {ticket.creator?.full_name} ({ticket.creator?.email})
-                </span>
+                <div className="text-right">
+                  <span className="font-semibold text-slate-700 block">
+                    {creatorDisplay}
+                  </span>
+                  {creatorEmail && (
+                    <span className="text-slate-400 flex items-center gap-0.5 justify-end">
+                      <Mail className="w-3 h-3" />
+                      {creatorEmail}
+                    </span>
+                  )}
+                </div>
               </div>
 
               {ticket.creator?.department && (
@@ -488,13 +526,40 @@ export default function TicketDetailPage() {
           </div>
         </div>
 
-        {/* Right Column: Realtime Chat */}
+        {/* Right Column: Chat */}
         <div className="lg:col-span-7">
-          <ChatBox
-            ticketId={ticket.id}
-            currentUser={currentUser}
-            driveFolderId={ticket.drive_folder_id}
-          />
+          {isLoggedIn && currentUser ? (
+            /* Chat đầy đủ cho user đã đăng nhập */
+            <ChatBox
+              ticketId={ticket.id}
+              currentUser={currentUser}
+              driveFolderId={ticket.drive_folder_id}
+            />
+          ) : (
+            /* Thông báo chat cho guest */
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+              <div className="p-4 border-b border-slate-100 bg-slate-50">
+                <h3 className="text-sm font-bold text-slate-700">Lịch sử hỗ trợ</h3>
+              </div>
+              <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+                <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-500 flex items-center justify-center mb-4">
+                  <Lock className="w-7 h-7" />
+                </div>
+                <h4 className="text-base font-bold text-slate-800 mb-2">
+                  Đăng nhập để xem & trả lời
+                </h4>
+                <p className="text-sm text-slate-500 max-w-xs mb-6">
+                  Phần hội thoại hỗ trợ chỉ dành cho nhân viên và người dùng đã đăng nhập.
+                </p>
+                <Link
+                  href="/login"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-md shadow-indigo-100"
+                >
+                  Đăng nhập
+                </Link>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -5,7 +5,16 @@ import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { UserProfile } from '@/lib/types';
-import { LifeBuoy, PlusCircle, LogOut, ShieldCheck, Headphones, User as UserIcon, Tag } from 'lucide-react';
+import {
+  LifeBuoy,
+  PlusCircle,
+  LogOut,
+  LogIn,
+  ShieldCheck,
+  Headphones,
+  User as UserIcon,
+  Tag,
+} from 'lucide-react';
 
 interface Props {
   user: UserProfile | null;
@@ -18,7 +27,7 @@ export function Navbar({ user }: Props) {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    router.push('/login');
+    router.push('/tickets');
     router.refresh();
   };
 
@@ -104,9 +113,10 @@ export function Navbar({ user }: Props) {
             </nav>
           </div>
 
-          {/* User profile & Logout */}
+          {/* User profile OR Login button */}
           <div className="flex items-center gap-4">
-            {user && (
+            {user ? (
+              /* Đã đăng nhập - hiện profile + logout */
               <div className="flex items-center gap-3">
                 <div className="hidden sm:block text-right">
                   <div className="text-sm font-semibold text-slate-800 leading-tight">
@@ -134,6 +144,16 @@ export function Navbar({ user }: Props) {
                   <LogOut className="w-4 h-4" />
                 </button>
               </div>
+            ) : (
+              /* Chưa đăng nhập - hiện nút Login cho agent/admin */
+              <Link
+                href="/login"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-700 text-white text-sm font-semibold rounded-xl shadow-sm transition-all"
+              >
+                <LogIn className="w-4 h-4" />
+                <span className="hidden sm:inline">Đăng nhập (Agent/Admin)</span>
+                <span className="sm:hidden">Đăng nhập</span>
+              </Link>
             )}
           </div>
         </div>

@@ -21,9 +21,11 @@ export interface Ticket {
   description?: string | null;
   status: TicketStatus;
   priority: TicketPriority;
-  created_by: string;
+  created_by?: string | null;
   assigned_to?: string | null;
   drive_folder_id?: string | null;
+  guest_name?: string | null;
+  guest_email?: string | null;
   created_at: string;
   updated_at: string;
   // Joined fields

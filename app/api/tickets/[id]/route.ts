@@ -9,18 +9,11 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Chưa đăng nhập' }, { status: 401 });
-    }
-
+    // Dùng admin client để cho phép public access (không cần đăng nhập)
+    const adminClient = createAdminClient();
     const ticketId = params.id;
 
-    const { data: ticket, error } = await supabase
+    const { data: ticket, error } = await adminClient
       .from('tickets')
       .select(`
         *,
@@ -47,7 +40,7 @@ export async function GET(
     };
 
     // Lấy danh sách attachments của ticket này
-    const { data: attachments } = await supabase
+    const { data: attachments } = await adminClient
       .from('attachments')
       .select('*')
       .eq('ticket_id', ticketId)
