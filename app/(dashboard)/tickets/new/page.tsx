@@ -87,18 +87,21 @@ export default function NewTicketPage() {
     const selectedFiles = Array.from(e.target.files);
     selectedFiles.forEach((file) => {
       if (file.type.startsWith('image/')) {
-        // Open editor for images
-        setImageEditorSourceFile(file);
-        setEditingFileIndex(-1); // -1 = new file
-        setShowImageEditor(true);
+        // Thêm ảnh vào danh sách và tạo preview ngay (không tự mở editor)
+        setFiles((prev) => {
+          const idx = prev.length;
+          setFilePreviews((fp) => ({ ...fp, [idx]: URL.createObjectURL(file) }));
+          return [...prev, file];
+        });
       } else {
-        // Add non-image files directly
+        // File không phải ảnh: thêm thẳng
         setFiles((prev) => [...prev, file]);
       }
     });
-    // Reset input
+    // Reset input để có thể chọn lại cùng file
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
+
 
   // Re-edit an existing image in the list
   const handleReEditImage = (idx: number) => {
@@ -429,7 +432,7 @@ export default function NewTicketPage() {
                   Nhấn để chọn file
                 </span>
                 <span className="text-xs text-slate-400">
-                  Hỗ trợ PNG, JPG, PDF, Word, Excel · Ảnh sẽ mở trình chỉnh sửa trước khi đính kèm
+                  Hỗ trợ PNG, JPG, PDF, Word, Excel · Có thể chọn nhiều file · Bấm ✏️ để chỉnh sửa ảnh
                 </span>
               </label>
             </div>

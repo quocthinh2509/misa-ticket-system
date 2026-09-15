@@ -14,6 +14,7 @@ import {
   User,
   X,
   Maximize2,
+  Pencil,
 } from 'lucide-react';
 import { FormattedText } from '@/components/FormattedText';
 import { ImageEditorModal } from '@/components/ImageEditorModal';
@@ -22,6 +23,13 @@ interface Props {
   ticketId: string;
   currentUser: UserProfile | null;
   driveFolderId?: string | null;
+}
+
+// ─── Pending file entry ──────────────────────────────────────────────────────
+
+interface PendingEntry {
+  file: File;
+  previewUrl: string | null; // null nếu không phải ảnh
 }
 
 export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
@@ -40,16 +48,15 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
     }
     return [];
   });
-  
-  // Pending file to send (either from file picker or clipboard paste Ctrl+V)
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [pendingPreviewUrl, setPendingPreviewUrl] = useState<string | null>(null);
 
-  // Image editor modal
+  // ── Danh sách file chờ gửi (hỗ trợ nhiều file) ──
+  const [pendingEntries, setPendingEntries] = useState<PendingEntry[]>([]);
+
+  // ── Image editor: chỉ mở khi user bấm nút "Sửa" ──
   const [showImageEditor, setShowImageEditor] = useState(false);
-  const [imageEditorSourceFile, setImageEditorSourceFile] = useState<File | null>(null);
+  const [editingIndex, setEditingIndex] = useState<number>(-1); // index trong pendingEntries
 
-  // Fullscreen image preview modal
+  // ── Lightbox xem ảnh đã gửi ──
   const [previewModalImg, setPreviewModalImg] = useState<{ url: string; name: string } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -71,14 +78,13 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // Fetch initial chat messages
+  // ── Fetch lịch sử chat ────────────────────────────────────────────────────
+
   const fetchMessages = async () => {
     try {
       const res = await fetch(`/api/tickets/${ticketId}/chat`);
       const data = await res.json();
-      if (data.messages) {
-        setMessages(data.messages);
-      }
+      if (data.messages) setMessages(data.messages);
     } catch (err) {
       console.error('Lỗi lấy lịch sử chat:', err);
     } finally {
@@ -86,172 +92,153 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
     }
   };
 
-  useEffect(() => {
-    fetchMessages();
-  }, [ticketId]);
+  useEffect(() => { fetchMessages(); }, [ticketId]);
+  useEffect(() => { scrollToBottom(); }, [messages]);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+  // ── Realtime subscription ─────────────────────────────────────────────────
 
-  // Realtime subscription using Supabase Channel
   useEffect(() => {
     const channel = supabase
       .channel(`ticket-chat-${ticketId}`)
       .on(
         'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'chat_logs',
-          filter: `ticket_id=eq.${ticketId}`,
-        },
+        { event: 'INSERT', schema: 'public', table: 'chat_logs', filter: `ticket_id=eq.${ticketId}` },
         async (payload) => {
           const newMsg = payload.new as ChatLog;
-
           let sender = null;
           if (newMsg.sender_id) {
             const { data: senderData } = await supabase
-              .from('users')
-              .select('*')
-              .eq('id', newMsg.sender_id)
-              .single();
+              .from('users').select('*').eq('id', newMsg.sender_id).single();
             sender = senderData;
           }
-
           const { data: attachments } = await supabase
-            .from('attachments')
-            .select('*')
-            .eq('chat_log_id', newMsg.id);
-
+            .from('attachments').select('*').eq('chat_log_id', newMsg.id);
           setMessages((prev) => {
             if (prev.some((m) => m.id === newMsg.id)) return prev;
-            return [
-              ...prev,
-              {
-                ...newMsg,
-                sender: sender || undefined,
-                attachments: attachments || [],
-                attachment: attachments?.[0] || null,
-              },
-            ];
+            return [...prev, { ...newMsg, sender: sender || undefined, attachments: attachments || [], attachment: attachments?.[0] || null }];
           });
         }
       )
       .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [ticketId, supabase]);
 
-  // Xử lý chọn tệp từ nút bấm
-  // Nếu là ảnh → mở Image Editor; nếu là file khác → gắn thẳng
-  const handleSelectFile = (file: File) => {
-    if (file.type.startsWith('image/')) {
-      setImageEditorSourceFile(file);
-      setShowImageEditor(true);
-    } else {
-      setPendingFile(file);
-      setPendingPreviewUrl(null);
-    }
+  // ── Thêm file vào pending list (không tự mở editor) ──────────────────────
+
+  const addFiles = (files: File[]) => {
+    const newEntries: PendingEntry[] = files.map((f) => ({
+      file: f,
+      previewUrl: f.type.startsWith('image/') ? URL.createObjectURL(f) : null,
+    }));
+    setPendingEntries((prev) => [...prev, ...newEntries]);
   };
 
-  // Callback khi user xác nhận trong Image Editor
-  const handleImageEditorConfirm = (editedFile: File) => {
-    setShowImageEditor(false);
-    setImageEditorSourceFile(null);
-    setPendingFile(editedFile);
-    const url = URL.createObjectURL(editedFile);
-    setPendingPreviewUrl(url);
+  const removePendingEntry = (idx: number) => {
+    setPendingEntries((prev) => {
+      const entry = prev[idx];
+      if (entry?.previewUrl) URL.revokeObjectURL(entry.previewUrl);
+      return prev.filter((_, i) => i !== idx);
+    });
   };
 
-  // Callback khi user hủy Image Editor
-  const handleImageEditorCancel = () => {
-    setShowImageEditor(false);
-    setImageEditorSourceFile(null);
-    // Reset input refs so user can re-select
+  const clearAllPending = () => {
+    setPendingEntries((prev) => {
+      prev.forEach((e) => { if (e.previewUrl) URL.revokeObjectURL(e.previewUrl); });
+      return [];
+    });
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (imageInputRef.current) imageInputRef.current.value = '';
   };
 
-  const clearPendingFile = () => {
-    if (pendingPreviewUrl) {
-      URL.revokeObjectURL(pendingPreviewUrl);
-    }
-    setPendingFile(null);
-    setPendingPreviewUrl(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-    if (imageInputRef.current) imageInputRef.current.value = '';
-  };
+  // ── Paste Ctrl+V ──────────────────────────────────────────────────────────
 
-  // Hỗ trợ dán ảnh trực tiếp từ Clipboard (Ctrl + V)
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     const items = e.clipboardData.items;
+    const pastedFiles: File[] = [];
     for (let i = 0; i < items.length; i++) {
       if (items[i].type.startsWith('image/')) {
         const blob = items[i].getAsFile();
         if (blob) {
-          const file = new File([blob], `screenshot_${Date.now()}.png`, { type: blob.type });
-          handleSelectFile(file);
-          e.preventDefault();
-          break;
+          pastedFiles.push(new File([blob], `screenshot_${Date.now()}.png`, { type: blob.type }));
         }
       }
     }
+    if (pastedFiles.length > 0) {
+      addFiles(pastedFiles);
+      e.preventDefault();
+    }
   };
 
-  // Gửi tin nhắn (kèm tệp/ảnh nếu có)
+  // ── Mở editor cho 1 ảnh cụ thể (chỉ khi bấm nút Sửa) ───────────────────
+
+  const openEditorForIndex = (idx: number) => {
+    setEditingIndex(idx);
+    setShowImageEditor(true);
+  };
+
+  const handleEditorConfirm = (editedFile: File) => {
+    const newPreviewUrl = URL.createObjectURL(editedFile);
+    setPendingEntries((prev) => {
+      const updated = [...prev];
+      if (updated[editingIndex]?.previewUrl) URL.revokeObjectURL(updated[editingIndex].previewUrl!);
+      updated[editingIndex] = { file: editedFile, previewUrl: newPreviewUrl };
+      return updated;
+    });
+    setShowImageEditor(false);
+    setEditingIndex(-1);
+  };
+
+  const handleEditorCancel = () => {
+    setShowImageEditor(false);
+    setEditingIndex(-1);
+  };
+
+  // ── Gửi tin nhắn ─────────────────────────────────────────────────────────
+
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (sending) return;
 
     const messageText = inputMessage.trim();
-    if (!messageText && !pendingFile) return;
+    const hasFiles = pendingEntries.length > 0;
+    if (!messageText && !hasFiles) return;
 
     setSending(true);
-
     try {
-      if (pendingFile) {
-        // Gửi qua API upload attachment kèm nội dung tin nhắn
-        const formData = new FormData();
-        formData.append('file', pendingFile);
-        formData.append('message', messageText || `Đã đính kèm ảnh: ${pendingFile.name}`);
+      if (hasFiles) {
+        // Upload từng file; caption chỉ gắn vào file đầu tiên
+        for (let i = 0; i < pendingEntries.length; i++) {
+          const { file } = pendingEntries[i];
+          const formData = new FormData();
+          formData.append('file', file);
+          const caption = i === 0
+            ? (messageText || `Đã đính kèm ${pendingEntries.length > 1 ? `${pendingEntries.length} tệp` : file.name}`)
+            : `Tệp đính kèm: ${file.name}`;
+          formData.append('message', caption);
 
-        const res = await fetch(`/api/tickets/${ticketId}/attachments`, {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!res.ok) {
-          const errJson = await res.json().catch(() => ({}));
-          throw new Error(errJson.error || 'Upload ảnh/tệp thất bại');
+          const res = await fetch(`/api/tickets/${ticketId}/attachments`, {
+            method: 'POST',
+            body: formData,
+          });
+          if (!res.ok) {
+            const errJson = await res.json().catch(() => ({}));
+            throw new Error(errJson.error || `Upload tệp ${i + 1} thất bại`);
+          }
+          const data = await res.json();
+          if (data.chatLog?.id) markMessageAsMine(data.chatLog.id);
         }
-
-        const data = await res.json();
-        if (data.chatLog?.id) {
-          markMessageAsMine(data.chatLog.id);
-        }
-
-        clearPendingFile();
+        clearAllPending();
         setInputMessage('');
       } else {
-        // Gửi tin nhắn văn bản thông thường
+        // Text only
         const res = await fetch(`/api/tickets/${ticketId}/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: messageText }),
         });
-
-        if (!res.ok) {
-          throw new Error('Không thể gửi tin nhắn');
-        }
-
+        if (!res.ok) throw new Error('Không thể gửi tin nhắn');
         const data = await res.json();
-        if (data.message?.id) {
-          markMessageAsMine(data.message.id);
-        }
-
+        if (data.message?.id) markMessageAsMine(data.message.id);
         setInputMessage('');
       }
     } catch (err: any) {
@@ -262,20 +249,21 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
     }
   };
 
+  // ── Render ────────────────────────────────────────────────────────────────
+
   return (
     <div className="flex flex-col h-[680px] bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
       {/* Chat header */}
       <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
         <div>
           <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-            Lịch sử trao đổi & Chat trực tiếp
+            Lịch sử trao đổi &amp; Chat trực tiếp
             <span className="inline-flex items-center gap-1 text-[11px] font-normal text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
               Realtime
             </span>
           </h3>
         </div>
-
         {driveFolderId && (
           <a
             href={`https://drive.google.com/drive/folders/${driveFolderId}`}
@@ -297,17 +285,16 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
           </div>
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center text-slate-400">
-            <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-2 text-slate-400">
+            <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-2">
               <ImageIcon className="w-6 h-6" />
             </div>
             <p className="text-sm font-medium text-slate-600">Chưa có tin nhắn nào</p>
             <p className="text-xs mt-1 text-slate-400 max-w-xs">
-              Bạn có thể gửi tin nhắn văn bản, bấm biểu tượng ảnh hoặc nhấn <b>Ctrl + V</b> để dán ảnh chụp màn hình trực tiếp.
+              Gửi tin nhắn văn bản, đính kèm nhiều ảnh/tệp, hoặc nhấn <b>Ctrl+V</b> để dán ảnh.
             </p>
           </div>
         ) : (
           messages.map((msg) => {
-            // System message rendering
             if (msg.message_type === 'system') {
               return (
                 <div key={msg.id} className="flex justify-center my-2">
@@ -330,10 +317,7 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
                 : [];
 
             return (
-              <div
-                key={msg.id}
-                className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
-              >
+              <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                 {/* Sender info */}
                 <div className="flex items-center gap-1.5 mb-1 px-1 text-xs text-slate-500">
                   <span className="font-semibold text-slate-700">
@@ -354,9 +338,7 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
                       <User className="w-2.5 h-2.5" /> Khách
                     </span>
                   )}
-                  <span className="text-[11px] text-slate-400">
-                    {formatTime(msg.created_at)}
-                  </span>
+                  <span className="text-[11px] text-slate-400">{formatTime(msg.created_at)}</span>
                 </div>
 
                 {/* Message bubble */}
@@ -367,24 +349,18 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
                       : 'bg-slate-100 text-slate-800 rounded-tl-none border border-slate-200/80'
                   }`}
                 >
-                  {/* Text content with formatted URLs */}
                   {msg.message && (
                     <p className="whitespace-pre-wrap break-words leading-relaxed">
-                      <FormattedText
-                        text={msg.message}
-                        variant={isMe ? 'chat-me' : 'chat-other'}
-                      />
+                      <FormattedText text={msg.message} variant={isMe ? 'chat-me' : 'chat-other'} />
                     </p>
                   )}
 
-                  {/* Render attached files & images */}
                   {attachedList.length > 0 && (
                     <div className="mt-2.5 space-y-2">
                       {attachedList.map((att) => {
                         const isImage =
                           att.file_type?.startsWith('image/') ||
                           /\.(png|jpe?g|gif|webp|bmp)$/i.test(att.file_name);
-
                         const streamUrl = `/api/drive/file/${att.drive_file_id}`;
 
                         if (isImage) {
@@ -394,23 +370,13 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
                                 src={streamUrl}
                                 alt={att.file_name}
                                 className="max-h-72 w-auto object-cover rounded-xl cursor-pointer hover:opacity-95 transition-opacity"
-                                onClick={() =>
-                                  setPreviewModalImg({
-                                    url: streamUrl,
-                                    name: att.file_name,
-                                  })
-                                }
+                                onClick={() => setPreviewModalImg({ url: streamUrl, name: att.file_name })}
                                 loading="lazy"
                               />
                               <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    setPreviewModalImg({
-                                      url: streamUrl,
-                                      name: att.file_name,
-                                    })
-                                  }
+                                  onClick={() => setPreviewModalImg({ url: streamUrl, name: att.file_name })}
                                   title="Xem ảnh phóng to"
                                   className="p-1.5 bg-black/60 hover:bg-black/80 text-white rounded-lg backdrop-blur-sm transition-colors"
                                 >
@@ -430,7 +396,6 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
                           );
                         }
 
-                        // Normal document/file
                         return (
                           <a
                             key={att.id}
@@ -444,9 +409,7 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
                             }`}
                           >
                             <FileText className="w-4 h-4 flex-shrink-0" />
-                            <span className="truncate font-medium flex-1">
-                              {att.file_name}
-                            </span>
+                            <span className="truncate font-medium flex-1">{att.file_name}</span>
                             <ExternalLink className="w-3.5 h-3.5 opacity-70" />
                           </a>
                         );
@@ -461,49 +424,94 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Pending file preview bar */}
-      {pendingFile && (
-        <div className="px-4 py-2 bg-indigo-50/80 border-t border-indigo-100 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-bottom-2">
-          <div className="flex items-center gap-3 overflow-hidden">
-            {pendingPreviewUrl ? (
-              <img
-                src={pendingPreviewUrl}
-                alt="Preview"
-                className="w-10 h-10 object-cover rounded-lg border border-indigo-200"
-              />
-            ) : (
-              <div className="w-10 h-10 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center">
-                <FileText className="w-5 h-5" />
-              </div>
-            )}
-            <div className="truncate text-xs">
-              <span className="font-semibold text-slate-800 block truncate">
-                {pendingFile.name}
-              </span>
-              <span className="text-slate-500">
-                {(pendingFile.size / 1024).toFixed(0)} KB • Sẵn sàng gửi lên Drive
-              </span>
-            </div>
+      {/* ── Pending files preview bar (nhiều file) ── */}
+      {pendingEntries.length > 0 && (
+        <div className="border-t border-indigo-100 bg-indigo-50/60 px-3 py-2 animate-in fade-in slide-in-from-bottom-2">
+          {/* Header bar */}
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-semibold text-indigo-700">
+              {pendingEntries.length} tệp đính kèm · Sẵn sàng gửi
+            </span>
+            <button
+              type="button"
+              onClick={clearAllPending}
+              className="text-[11px] text-slate-400 hover:text-rose-500 transition-colors flex items-center gap-0.5"
+            >
+              <X className="w-3 h-3" /> Xóa tất cả
+            </button>
           </div>
 
-          <button
-            type="button"
-            onClick={clearPendingFile}
-            className="p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-white transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          {/* Scrollable horizontal list */}
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {pendingEntries.map((entry, idx) => {
+              const isImg = !!entry.previewUrl;
+              return (
+                <div
+                  key={idx}
+                  className="relative flex-shrink-0 group"
+                >
+                  {isImg ? (
+                    <img
+                      src={entry.previewUrl!}
+                      alt={entry.file.name}
+                      className="w-16 h-16 object-cover rounded-xl border border-indigo-200 bg-white"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 rounded-xl border border-indigo-200 bg-white flex flex-col items-center justify-center gap-1">
+                      <FileText className="w-5 h-5 text-indigo-400" />
+                      <span className="text-[9px] text-slate-500 truncate w-12 text-center px-1 leading-tight">
+                        {entry.file.name.split('.').pop()?.toUpperCase()}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Overlay buttons: edit (ảnh) + remove */}
+                  <div className="absolute inset-0 rounded-xl bg-black/0 group-hover:bg-black/30 transition-all flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100">
+                    {isImg && (
+                      <button
+                        type="button"
+                        onClick={() => openEditorForIndex(idx)}
+                        title="Sửa ảnh"
+                        className="p-1 bg-white/90 hover:bg-white text-indigo-600 rounded-lg shadow transition-colors"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => removePendingEntry(idx)}
+                      title="Xóa"
+                      className="p-1 bg-white/90 hover:bg-white text-rose-500 rounded-lg shadow transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+
+                  {/* File name tooltip */}
+                  <div className="mt-0.5 max-w-[64px]">
+                    <p className="text-[9px] text-slate-500 truncate text-center">{entry.file.name}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
-      {/* Input area - hỗ trợ cả khách và user đăng nhập */}
+      {/* Input area */}
       <div className="p-3 border-t border-slate-100 bg-white">
         <form onSubmit={handleSendMessage} className="flex items-center gap-2">
-          {/* File Picker (Any file) */}
+          {/* File Picker (bất kỳ loại, nhiều file) */}
           <input
             type="file"
+            multiple
             ref={fileInputRef}
-            onChange={(e) => e.target.files?.[0] && handleSelectFile(e.target.files[0])}
+            onChange={(e) => {
+              if (e.target.files && e.target.files.length > 0) {
+                addFiles(Array.from(e.target.files));
+                e.target.value = '';
+              }
+            }}
             className="hidden"
             id="chat-file-upload"
           />
@@ -517,12 +525,18 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
             <Paperclip className="w-4 h-4" />
           </button>
 
-          {/* Image Picker (Images only) */}
+          {/* Image Picker (nhiều ảnh) */}
           <input
             type="file"
+            multiple
             ref={imageInputRef}
             accept="image/*"
-            onChange={(e) => e.target.files?.[0] && handleSelectFile(e.target.files[0])}
+            onChange={(e) => {
+              if (e.target.files && e.target.files.length > 0) {
+                addFiles(Array.from(e.target.files));
+                e.target.value = '';
+              }
+            }}
             className="hidden"
             id="chat-image-upload"
           />
@@ -530,7 +544,7 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
             type="button"
             disabled={sending}
             onClick={() => imageInputRef.current?.click()}
-            title="Gửi hình ảnh"
+            title="Gửi hình ảnh (có thể chọn nhiều)"
             className="p-2.5 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 transition-colors disabled:opacity-50 cursor-pointer"
           >
             <ImageIcon className="w-4 h-4" />
@@ -542,11 +556,11 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
             onChange={(e) => setInputMessage(e.target.value)}
             onPaste={handlePaste}
             placeholder={
-              pendingFile
-                ? 'Thêm chú thích cho ảnh/tệp (nhấn Enter để gửi)...'
+              pendingEntries.length > 0
+                ? `Thêm chú thích (${pendingEntries.length} tệp) hoặc nhấn Enter để gửi...`
                 : currentUser
-                ? 'Nhập tin nhắn trao đổi (hoặc nhấn Ctrl + V để dán ảnh)...'
-                : 'Nhập phản hồi với tư cách Khách (hoặc nhấn Ctrl + V để dán ảnh)...'
+                ? 'Nhập tin nhắn (Ctrl+V để dán ảnh, đính kèm nhiều file)...'
+                : 'Nhập phản hồi với tư cách Khách (Ctrl+V để dán ảnh)...'
             }
             disabled={sending}
             className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 text-slate-900 placeholder:text-slate-400 transition-all"
@@ -554,18 +568,13 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
 
           <button
             type="submit"
-            disabled={sending || (!inputMessage.trim() && !pendingFile)}
+            disabled={sending || (!inputMessage.trim() && pendingEntries.length === 0)}
             className="p-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md shadow-indigo-100 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex-shrink-0"
           >
-            {sending ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Send className="w-4 h-4" />
-            )}
+            {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
           </button>
         </form>
 
-        {/* Subtle footer notice for guest */}
         {!currentUser && (
           <div className="mt-2 px-1 text-[11px] text-slate-400 flex items-center justify-between">
             <span>Bạn đang trao đổi với tư cách <b>Khách</b> (không cần đăng nhập)</span>
@@ -576,7 +585,7 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
         )}
       </div>
 
-      {/* Fullscreen Image Preview Lightbox Modal */}
+      {/* Lightbox xem ảnh đã gửi */}
       {previewModalImg && (
         <div
           className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in"
@@ -595,19 +604,17 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
               className="max-h-[80vh] w-auto object-contain rounded-xl shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             />
-            <p className="text-white text-xs mt-3 opacity-80">
-              {previewModalImg.name}
-            </p>
+            <p className="text-white text-xs mt-3 opacity-80">{previewModalImg.name}</p>
           </div>
         </div>
       )}
 
-      {/* Image Editor Modal */}
-      {showImageEditor && imageEditorSourceFile && (
+      {/* Image Editor Modal — chỉ mở khi bấm nút Sửa */}
+      {showImageEditor && editingIndex >= 0 && pendingEntries[editingIndex] && (
         <ImageEditorModal
-          file={imageEditorSourceFile}
-          onConfirm={handleImageEditorConfirm}
-          onCancel={handleImageEditorCancel}
+          file={pendingEntries[editingIndex].file}
+          onConfirm={handleEditorConfirm}
+          onCancel={handleEditorCancel}
         />
       )}
     </div>
