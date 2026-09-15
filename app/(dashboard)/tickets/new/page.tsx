@@ -46,8 +46,11 @@ export default function NewTicketPage() {
   // Image editor state
   const [showImageEditor, setShowImageEditor] = useState(false);
   const [imageEditorSourceFile, setImageEditorSourceFile] = useState<File | null>(null);
-  // Index in `files` being edited (-1 = new file not yet added)
   const [editingFileIndex, setEditingFileIndex] = useState<number>(-1);
+
+  // Rename state
+  const [renamingFileIdx, setRenamingFileIdx] = useState<number>(-1);
+  const [renameFileValue, setRenameFileValue] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -145,6 +148,37 @@ export default function NewTicketPage() {
     setImageEditorSourceFile(null);
     setEditingFileIndex(-1);
   };
+
+  // ─── Đặt lại tên file ────────────────────────────────────────────────────────────────
+
+  const startRenameFile = (idx: number) => {
+    const f = files[idx];
+    const parts = f.name.split('.');
+    const baseName = parts.length > 1 ? parts.slice(0, -1).join('.') : f.name;
+    setRenamingFileIdx(idx);
+    setRenameFileValue(baseName);
+  };
+
+  const confirmRenameFile = (idx: number) => {
+    const newBase = renameFileValue.trim();
+    if (!newBase) { cancelRenameFile(); return; }
+    setFiles((prev) => {
+      const updated = [...prev];
+      const f = updated[idx];
+      const ext = f.name.includes('.') ? '.' + f.name.split('.').pop() : '';
+      const newName = newBase + ext;
+      updated[idx] = new File([f], newName, { type: f.type });
+      return updated;
+    });
+    setRenamingFileIdx(-1);
+    setRenameFileValue('');
+  };
+
+  const cancelRenameFile = () => {
+    setRenamingFileIdx(-1);
+    setRenameFileValue('');
+  };
+
 
   const removeFile = (index: number) => {
     setFiles((prev) => {
@@ -446,12 +480,13 @@ export default function NewTicketPage() {
                   {files.map((file, idx) => {
                     const isImage = file.type.startsWith('image/');
                     const previewUrl = filePreviews[idx];
+                    const isRenaming = renamingFileIdx === idx;
                     return (
                       <div
                         key={idx}
                         className="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-700 gap-2"
                       >
-                        <div className="flex items-center gap-2 truncate flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
                           {isImage && previewUrl ? (
                             <img
                               src={previewUrl}
@@ -467,12 +502,41 @@ export default function NewTicketPage() {
                               )}
                             </div>
                           )}
-                          <div className="truncate min-w-0">
-                            <span className="truncate block font-medium">{file.name}</span>
+                          <div className="truncate min-w-0 flex-1">
+                            {isRenaming ? (
+                              <input
+                                autoFocus
+                                type="text"
+                                value={renameFileValue}
+                                onChange={(e) => setRenameFileValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') { e.preventDefault(); confirmRenameFile(idx); }
+                                  if (e.key === 'Escape') cancelRenameFile();
+                                }}
+                                onBlur={() => confirmRenameFile(idx)}
+                                className="w-full px-2 py-0.5 border border-indigo-400 rounded-md text-xs text-slate-800 bg-white outline-none ring-1 ring-indigo-400"
+                              />
+                            ) : (
+                              <span
+                                className="truncate block font-medium cursor-pointer hover:text-indigo-600 transition-colors"
+                                title={`${file.name} — Click để đặt tên lại`}
+                                onClick={() => startRenameFile(idx)}
+                              >
+                                {file.name}
+                              </span>
+                            )}
                             <span className="text-slate-400">{(file.size / 1024).toFixed(0)} KB</span>
                           </div>
                         </div>
                         <div className="flex items-center gap-1 flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => startRenameFile(idx)}
+                            title="Đặt lại tên"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors text-[10px] font-bold leading-none"
+                          >
+                            Aa
+                          </button>
                           {isImage && (
                             <button
                               type="button"

@@ -30,6 +30,7 @@ interface Props {
 interface PendingEntry {
   file: File;
   previewUrl: string | null; // null nếu không phải ảnh
+  displayName: string;       // tên hiển thị (có thể được đặt lại)
 }
 
 export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
@@ -54,7 +55,11 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
 
   // ── Image editor: chỉ mở khi user bấm nút "Sửa" ──
   const [showImageEditor, setShowImageEditor] = useState(false);
-  const [editingIndex, setEditingIndex] = useState<number>(-1); // index trong pendingEntries
+  const [editingIndex, setEditingIndex] = useState<number>(-1);
+
+  // ── Rename state ──
+  const [renamingIndex, setRenamingIndex] = useState<number>(-1);
+  const [renameValue, setRenameValue] = useState('');
 
   // ── Lightbox xem ảnh đã gửi ──
   const [previewModalImg, setPreviewModalImg] = useState<{ url: string; name: string } | null>(null);
@@ -129,6 +134,7 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
     const newEntries: PendingEntry[] = files.map((f) => ({
       file: f,
       previewUrl: f.type.startsWith('image/') ? URL.createObjectURL(f) : null,
+      displayName: f.name,
     }));
     setPendingEntries((prev) => [...prev, ...newEntries]);
   };
@@ -181,11 +187,46 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
     setPendingEntries((prev) => {
       const updated = [...prev];
       if (updated[editingIndex]?.previewUrl) URL.revokeObjectURL(updated[editingIndex].previewUrl!);
-      updated[editingIndex] = { file: editedFile, previewUrl: newPreviewUrl };
+      updated[editingIndex] = {
+        file: editedFile,
+        previewUrl: newPreviewUrl,
+        displayName: updated[editingIndex]?.displayName || editedFile.name,
+      };
       return updated;
     });
     setShowImageEditor(false);
     setEditingIndex(-1);
+  };
+
+  // ── Đặt lại tên file ──────────────────────────────────────────────────────
+
+  const startRename = (idx: number) => {
+    const entry = pendingEntries[idx];
+    const parts = entry.displayName.split('.');
+    const baseName = parts.length > 1 ? parts.slice(0, -1).join('.') : entry.displayName;
+    setRenamingIndex(idx);
+    setRenameValue(baseName);
+  };
+
+  const confirmRename = (idx: number) => {
+    const newBase = renameValue.trim();
+    if (!newBase) { cancelRename(); return; }
+    setPendingEntries((prev) => {
+      const updated = [...prev];
+      const entry = updated[idx];
+      const ext = entry.displayName.includes('.') ? '.' + entry.displayName.split('.').pop() : '';
+      const newDisplayName = newBase + ext;
+      const renamedFile = new File([entry.file], newDisplayName, { type: entry.file.type });
+      updated[idx] = { ...entry, file: renamedFile, displayName: newDisplayName };
+      return updated;
+    });
+    setRenamingIndex(-1);
+    setRenameValue('');
+  };
+
+  const cancelRename = () => {
+    setRenamingIndex(-1);
+    setRenameValue('');
   };
 
   const handleEditorCancel = () => {
@@ -208,12 +249,15 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
       if (hasFiles) {
         // Upload từng file; caption chỉ gắn vào file đầu tiên
         for (let i = 0; i < pendingEntries.length; i++) {
-          const { file } = pendingEntries[i];
+          const { file, displayName } = pendingEntries[i];
+          const fileToUpload = displayName !== file.name
+            ? new File([file], displayName, { type: file.type })
+            : file;
           const formData = new FormData();
-          formData.append('file', file);
+          formData.append('file', fileToUpload);
           const caption = i === 0
-            ? (messageText || `Đã đính kèm ${pendingEntries.length > 1 ? `${pendingEntries.length} tệp` : file.name}`)
-            : `Tệp đính kèm: ${file.name}`;
+            ? (messageText || `Đã đính kèm ${pendingEntries.length > 1 ? `${pendingEntries.length} tệp` : displayName}`)
+            : `Tệp đính kèm: ${displayName}`;
           formData.append('message', caption);
 
           const res = await fetch(`/api/tickets/${ticketId}/attachments`, {
@@ -445,52 +489,73 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
           <div className="flex gap-2 overflow-x-auto pb-1">
             {pendingEntries.map((entry, idx) => {
               const isImg = !!entry.previewUrl;
+              const isRenaming = renamingIndex === idx;
               return (
-                <div
-                  key={idx}
-                  className="relative flex-shrink-0 group"
-                >
+                <div key={idx} className="relative flex-shrink-0 group w-[76px]">
+                  {/* Thumbnail */}
                   {isImg ? (
                     <img
                       src={entry.previewUrl!}
-                      alt={entry.file.name}
+                      alt={entry.displayName}
                       className="w-16 h-16 object-cover rounded-xl border border-indigo-200 bg-white"
                     />
                   ) : (
                     <div className="w-16 h-16 rounded-xl border border-indigo-200 bg-white flex flex-col items-center justify-center gap-1">
                       <FileText className="w-5 h-5 text-indigo-400" />
                       <span className="text-[9px] text-slate-500 truncate w-12 text-center px-1 leading-tight">
-                        {entry.file.name.split('.').pop()?.toUpperCase()}
+                        {entry.displayName.split('.').pop()?.toUpperCase()}
                       </span>
                     </div>
                   )}
 
-                  {/* Overlay buttons: edit (ảnh) + remove */}
-                  <div className="absolute inset-0 rounded-xl bg-black/0 group-hover:bg-black/30 transition-all flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100">
-                    {isImg && (
-                      <button
-                        type="button"
-                        onClick={() => openEditorForIndex(idx)}
-                        title="Sửa ảnh"
-                        className="p-1 bg-white/90 hover:bg-white text-indigo-600 rounded-lg shadow transition-colors"
-                      >
-                        <Pencil className="w-3 h-3" />
+                  {/* Overlay buttons: sửa ảnh + đặt tên + xóa */}
+                  {!isRenaming && (
+                    <div className="absolute top-0 left-0 w-16 h-16 rounded-xl bg-black/0 group-hover:bg-black/35 transition-all flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100">
+                      {isImg && (
+                        <button type="button" onClick={() => openEditorForIndex(idx)} title="Sửa ảnh"
+                          className="p-1 bg-white/90 hover:bg-white text-indigo-600 rounded-lg shadow transition-colors">
+                          <Pencil className="w-3 h-3" />
+                        </button>
+                      )}
+                      <button type="button" onClick={() => startRename(idx)} title="Đặt lại tên"
+                        className="p-1 bg-white/90 hover:bg-white text-amber-600 rounded-lg shadow transition-colors text-[10px] font-bold leading-none">
+                        Aa
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => removePendingEntry(idx)}
-                      title="Xóa"
-                      className="p-1 bg-white/90 hover:bg-white text-rose-500 rounded-lg shadow transition-colors"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
+                      <button type="button" onClick={() => removePendingEntry(idx)} title="Xóa"
+                        className="p-1 bg-white/90 hover:bg-white text-rose-500 rounded-lg shadow transition-colors">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
 
-                  {/* File name tooltip */}
-                  <div className="mt-0.5 max-w-[64px]">
-                    <p className="text-[9px] text-slate-500 truncate text-center">{entry.file.name}</p>
-                  </div>
+                  {/* Inline rename input */}
+                  {isRenaming ? (
+                    <div className="mt-1">
+                      <input
+                        autoFocus
+                        type="text"
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') { e.preventDefault(); confirmRename(idx); }
+                          if (e.key === 'Escape') cancelRename();
+                        }}
+                        onBlur={() => confirmRename(idx)}
+                        className="w-[72px] text-[10px] px-1.5 py-0.5 border border-indigo-400 rounded-md bg-white text-slate-800 outline-none ring-1 ring-indigo-400"
+                      />
+                      <p className="text-[8px] text-slate-400 text-center mt-0.5">Enter để lưu</p>
+                    </div>
+                  ) : (
+                    <div className="mt-0.5">
+                      <p
+                        className="text-[9px] text-slate-500 truncate text-center cursor-pointer hover:text-indigo-600 transition-colors max-w-[72px]"
+                        title={`${entry.displayName} — Click để đặt tên lại`}
+                        onClick={() => startRename(idx)}
+                      >
+                        {entry.displayName}
+                      </p>
+                    </div>
+                  )}
                 </div>
               );
             })}
