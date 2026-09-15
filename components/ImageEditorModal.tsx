@@ -104,31 +104,40 @@ export function ImageEditorModal({ file, onConfirm, onCancel }: Props) {
     const img = new Image();
     const url = URL.createObjectURL(file);
     img.onload = () => {
-      const MAX_W = Math.min(window.innerWidth * 0.85, 1200);
-      const MAX_H = Math.min(window.innerHeight * 0.72, 800);
+      const origW = img.naturalWidth;
+      const origH = img.naturalHeight;
 
-      let w = img.naturalWidth;
-      let h = img.naturalHeight;
+      // Canvas resolution = độ phân giải GỐC của ảnh (không giảm)
+      canvas.width = origW;
+      canvas.height = origH;
+      overlay.width = origW;
+      overlay.height = origH;
 
-      // Scale down nếu quá lớn
-      if (w > MAX_W) {
-        h = Math.round((h * MAX_W) / w);
-        w = Math.round(MAX_W);
+      // Tính kích thước HIỂN THỊ (CSS) để vừa màn hình
+      const MAX_W = Math.min(window.innerWidth * 0.82, 1200);
+      const MAX_H = Math.min(window.innerHeight * 0.70, 820);
+
+      let displayW = origW;
+      let displayH = origH;
+      if (displayW > MAX_W) {
+        displayH = Math.round((displayH * MAX_W) / displayW);
+        displayW = Math.round(MAX_W);
       }
-      if (h > MAX_H) {
-        w = Math.round((w * MAX_H) / h);
-        h = Math.round(MAX_H);
+      if (displayH > MAX_H) {
+        displayW = Math.round((displayW * MAX_H) / displayH);
+        displayH = Math.round(MAX_H);
       }
 
-      canvas.width = w;
-      canvas.height = h;
-      overlay.width = w;
-      overlay.height = h;
+      // CSS: thu nhỏ để vừa màn hình, nhưng canvas buffer vẫn là full res
+      canvas.style.width = `${displayW}px`;
+      canvas.style.height = `${displayH}px`;
+      overlay.style.width = `${displayW}px`;
+      overlay.style.height = `${displayH}px`;
 
-      setImgDims({ w, h });
+      setImgDims({ w: origW, h: origH });
 
       const ctx = canvas.getContext('2d')!;
-      ctx.drawImage(img, 0, 0, w, h);
+      ctx.drawImage(img, 0, 0, origW, origH);
       URL.revokeObjectURL(url);
     };
     img.src = url;
