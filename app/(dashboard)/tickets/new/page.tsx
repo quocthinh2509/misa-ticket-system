@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { TicketPriority, Tag } from '@/lib/types';
@@ -17,7 +17,10 @@ import {
   User,
   Mail,
   Info,
+  Pencil,
+  Image as ImageIcon,
 } from 'lucide-react';
+import { ImageEditorModal } from '@/components/ImageEditorModal';
 
 export default function NewTicketPage() {
   const router = useRouter();
@@ -32,11 +35,21 @@ export default function NewTicketPage() {
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<TicketPriority>('medium');
   const [files, setFiles] = useState<File[]>([]);
+  // Preview URLs mapped by file index (for image thumbnails)
+  const [filePreviews, setFilePreviews] = useState<Record<number, string>>({});
   const [availableTags, setAvailableTags] = useState<Tag[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [statusStep, setStatusStep] = useState('');
+
+  // Image editor state
+  const [showImageEditor, setShowImageEditor] = useState(false);
+  const [imageEditorSourceFile, setImageEditorSourceFile] = useState<File | null>(null);
+  // Index in `files` being edited (-1 = new file not yet added)
+  const [editingFileIndex, setEditingFileIndex] = useState<number>(-1);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Kiểm tra trạng thái đăng nhập
   useEffect(() => {
@@ -70,14 +83,81 @@ export default function NewTicketPage() {
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      const selectedFiles = Array.from(e.target.files);
-      setFiles((prev) => [...prev, ...selectedFiles]);
+    if (!e.target.files) return;
+    const selectedFiles = Array.from(e.target.files);
+    selectedFiles.forEach((file) => {
+      if (file.type.startsWith('image/')) {
+        // Open editor for images
+        setImageEditorSourceFile(file);
+        setEditingFileIndex(-1); // -1 = new file
+        setShowImageEditor(true);
+      } else {
+        // Add non-image files directly
+        setFiles((prev) => [...prev, file]);
+      }
+    });
+    // Reset input
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // Re-edit an existing image in the list
+  const handleReEditImage = (idx: number) => {
+    setImageEditorSourceFile(files[idx]);
+    setEditingFileIndex(idx);
+    setShowImageEditor(true);
+  };
+
+  // Callback: editor confirmed
+  const handleImageEditorConfirm = (editedFile: File) => {
+    setShowImageEditor(false);
+    if (editingFileIndex >= 0) {
+      // Replace existing file
+      setFiles((prev) => {
+        const updated = [...prev];
+        updated[editingFileIndex] = editedFile;
+        return updated;
+      });
+      setFilePreviews((prev) => {
+        const updated = { ...prev };
+        // Revoke old URL
+        if (updated[editingFileIndex]) URL.revokeObjectURL(updated[editingFileIndex]);
+        updated[editingFileIndex] = URL.createObjectURL(editedFile);
+        return updated;
+      });
+    } else {
+      // Append new file
+      setFiles((prev) => {
+        const newIdx = prev.length;
+        setFilePreviews((fp) => ({ ...fp, [newIdx]: URL.createObjectURL(editedFile) }));
+        return [...prev, editedFile];
+      });
     }
+    setImageEditorSourceFile(null);
+    setEditingFileIndex(-1);
+  };
+
+  // Callback: editor cancelled
+  const handleImageEditorCancel = () => {
+    setShowImageEditor(false);
+    setImageEditorSourceFile(null);
+    setEditingFileIndex(-1);
   };
 
   const removeFile = (index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
+    setFiles((prev) => {
+      const updated = prev.filter((_, i) => i !== index);
+      // Re-map previews
+      setFilePreviews((fp) => {
+        const updated2: Record<number, string> = {};
+        if (fp[index]) URL.revokeObjectURL(fp[index]);
+        updated.forEach((_, newIdx) => {
+          const oldIdx = newIdx >= index ? newIdx + 1 : newIdx;
+          if (fp[oldIdx]) updated2[newIdx] = fp[oldIdx];
+        });
+        return updated2;
+      });
+      return updated;
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -332,6 +412,7 @@ export default function NewTicketPage() {
               <input
                 type="file"
                 multiple
+                ref={fileInputRef}
                 id="file-upload"
                 onChange={handleFileChange}
                 className="hidden"
@@ -348,7 +429,7 @@ export default function NewTicketPage() {
                   Nhấn để chọn file
                 </span>
                 <span className="text-xs text-slate-400">
-                  Hỗ trợ PNG, JPG, PDF, Word, Excel (Sẽ lưu trực tiếp lên Google Drive)
+                  Hỗ trợ PNG, JPG, PDF, Word, Excel · Ảnh sẽ mở trình chỉnh sửa trước khi đính kèm
                 </span>
               </label>
             </div>
@@ -359,27 +440,57 @@ export default function NewTicketPage() {
                   Các file đã chọn ({files.length}):
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {files.map((file, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-700"
-                    >
-                      <div className="flex items-center gap-2 truncate pr-2">
-                        <FileText className="w-4 h-4 text-indigo-500 flex-shrink-0" />
-                        <span className="truncate">{file.name}</span>
-                        <span className="text-slate-400">
-                          ({(file.size / 1024).toFixed(0)} KB)
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeFile(idx)}
-                        className="text-slate-400 hover:text-rose-500 p-1 rounded-md"
+                  {files.map((file, idx) => {
+                    const isImage = file.type.startsWith('image/');
+                    const previewUrl = filePreviews[idx];
+                    return (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-700 gap-2"
                       >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ))}
+                        <div className="flex items-center gap-2 truncate flex-1 min-w-0">
+                          {isImage && previewUrl ? (
+                            <img
+                              src={previewUrl}
+                              alt={file.name}
+                              className="w-9 h-9 object-cover rounded-lg border border-slate-200 flex-shrink-0"
+                            />
+                          ) : (
+                            <div className="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
+                              {isImage ? (
+                                <ImageIcon className="w-4 h-4 text-indigo-500" />
+                              ) : (
+                                <FileText className="w-4 h-4 text-indigo-500" />
+                              )}
+                            </div>
+                          )}
+                          <div className="truncate min-w-0">
+                            <span className="truncate block font-medium">{file.name}</span>
+                            <span className="text-slate-400">{(file.size / 1024).toFixed(0)} KB</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          {isImage && (
+                            <button
+                              type="button"
+                              onClick={() => handleReEditImage(idx)}
+                              title="Chỉnh sửa ảnh"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => removeFile(idx)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-colors"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -413,6 +524,15 @@ export default function NewTicketPage() {
           </div>
         </form>
       </div>
+
+      {/* Image Editor Modal */}
+      {showImageEditor && imageEditorSourceFile && (
+        <ImageEditorModal
+          file={imageEditorSourceFile}
+          onConfirm={handleImageEditorConfirm}
+          onCancel={handleImageEditorCancel}
+        />
+      )}
     </div>
   );
 }

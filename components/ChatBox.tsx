@@ -16,6 +16,7 @@ import {
   Maximize2,
 } from 'lucide-react';
 import { FormattedText } from '@/components/FormattedText';
+import { ImageEditorModal } from '@/components/ImageEditorModal';
 
 interface Props {
   ticketId: string;
@@ -43,6 +44,10 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
   // Pending file to send (either from file picker or clipboard paste Ctrl+V)
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [pendingPreviewUrl, setPendingPreviewUrl] = useState<string | null>(null);
+
+  // Image editor modal
+  const [showImageEditor, setShowImageEditor] = useState(false);
+  const [imageEditorSourceFile, setImageEditorSourceFile] = useState<File | null>(null);
 
   // Fullscreen image preview modal
   const [previewModalImg, setPreviewModalImg] = useState<{ url: string; name: string } | null>(null);
@@ -141,14 +146,33 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
   }, [ticketId, supabase]);
 
   // Xử lý chọn tệp từ nút bấm
+  // Nếu là ảnh → mở Image Editor; nếu là file khác → gắn thẳng
   const handleSelectFile = (file: File) => {
-    setPendingFile(file);
     if (file.type.startsWith('image/')) {
-      const url = URL.createObjectURL(file);
-      setPendingPreviewUrl(url);
+      setImageEditorSourceFile(file);
+      setShowImageEditor(true);
     } else {
+      setPendingFile(file);
       setPendingPreviewUrl(null);
     }
+  };
+
+  // Callback khi user xác nhận trong Image Editor
+  const handleImageEditorConfirm = (editedFile: File) => {
+    setShowImageEditor(false);
+    setImageEditorSourceFile(null);
+    setPendingFile(editedFile);
+    const url = URL.createObjectURL(editedFile);
+    setPendingPreviewUrl(url);
+  };
+
+  // Callback khi user hủy Image Editor
+  const handleImageEditorCancel = () => {
+    setShowImageEditor(false);
+    setImageEditorSourceFile(null);
+    // Reset input refs so user can re-select
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (imageInputRef.current) imageInputRef.current.value = '';
   };
 
   const clearPendingFile = () => {
@@ -576,6 +600,15 @@ export function ChatBox({ ticketId, currentUser, driveFolderId }: Props) {
             </p>
           </div>
         </div>
+      )}
+
+      {/* Image Editor Modal */}
+      {showImageEditor && imageEditorSourceFile && (
+        <ImageEditorModal
+          file={imageEditorSourceFile}
+          onConfirm={handleImageEditorConfirm}
+          onCancel={handleImageEditorCancel}
+        />
       )}
     </div>
   );
