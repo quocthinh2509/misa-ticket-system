@@ -16,8 +16,8 @@ export async function GET(request: NextRequest) {
 
     const { data: users, error } = await supabase
       .from('users')
-      .select('id, full_name, email, role, department')
-      .order('full_name', { ascending: true });
+      .select('id, full_name, email, role, department, created_at')
+      .order('created_at', { ascending: false });
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });

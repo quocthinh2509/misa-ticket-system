@@ -5,8 +5,8 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin', 'vietnamese'] });
 
 export const metadata: Metadata = {
-  title: 'MISA Ticket & Chat Log System',
-  description: 'Hệ thống quản lý ticket và hỗ trợ kỹ thuật trực tuyến MISA',
+  title: 'TLT Ticket & Chat Log System - Tú Lộc Tech',
+  description: 'Hệ thống quản lý ticket và hỗ trợ kỹ thuật trực tuyến Tú Lộc Tech (TLT)',
 };
 
 export default function RootLayout({

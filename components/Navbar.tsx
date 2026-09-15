@@ -14,6 +14,7 @@ import {
   Headphones,
   User as UserIcon,
   Tag,
+  Users,
 } from 'lucide-react';
 
 interface Props {
@@ -66,10 +67,10 @@ export function Navbar({ user }: Props) {
               </div>
               <div>
                 <span className="font-bold text-lg tracking-tight bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
-                  MISA Ticket
+                  TLT Ticket
                 </span>
                 <span className="text-[10px] block text-slate-500 uppercase tracking-widest font-semibold">
-                  Hỗ trợ kỹ thuật
+                  Tú Lộc Tech
                 </span>
               </div>
             </Link>
@@ -98,17 +99,30 @@ export function Navbar({ user }: Props) {
                 Tạo Ticket mới
               </Link>
               {user?.role === 'admin' && (
-                <Link
-                  href="/tags"
-                  className={`px-3.5 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
-                    pathname === '/tags'
-                      ? 'bg-purple-50 text-purple-700 font-semibold'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                  }`}
-                >
-                  <Tag className="w-4 h-4 text-purple-600" />
-                  Quản lý Nhãn
-                </Link>
+                <>
+                  <Link
+                    href="/users"
+                    className={`px-3.5 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                      pathname === '/users'
+                        ? 'bg-indigo-50 text-indigo-700 font-semibold'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Users className="w-4 h-4 text-indigo-600" />
+                    Thành viên
+                  </Link>
+                  <Link
+                    href="/tags"
+                    className={`px-3.5 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                      pathname === '/tags'
+                        ? 'bg-purple-50 text-purple-700 font-semibold'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Tag className="w-4 h-4 text-purple-600" />
+                    Quản lý Nhãn
+                  </Link>
+                </>
               )}
             </nav>
           </div>

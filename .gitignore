@@ -17,6 +17,7 @@
 # Misc
 .DS_Store
 *.pem
+*.tsbuildinfo
 /.implementation_plane/
 # Debug logs
 npm-debug.log*

@@ -53,10 +53,10 @@ export default function LoginPage() {
             <LifeBuoy className="w-7 h-7" />
           </div>
           <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-            Đăng nhập MISA Ticket
+            Đăng nhập TLT Ticket
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Hệ thống hỗ trợ kỹ thuật và quản lý chat log nội bộ
+            Hệ thống hỗ trợ kỹ thuật và quản lý chat log - Tú Lộc Tech
           </p>
         </div>
 
@@ -130,14 +130,8 @@ export default function LoginPage() {
           </form>
 
           <div className="mt-6 pt-6 border-t border-slate-100 text-center">
-            <p className="text-sm text-slate-600">
-              Chưa có tài khoản?{' '}
-              <Link
-                href="/register"
-                className="font-semibold text-indigo-600 hover:text-indigo-700 hover:underline"
-              >
-                Đăng ký ngay
-              </Link>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Tài khoản hệ thống do Quản trị viên cấp quyền. Vui lòng liên hệ Admin của Tú Lộc Tech nếu bạn chưa có tài khoản.
             </p>
           </div>
         </div>
